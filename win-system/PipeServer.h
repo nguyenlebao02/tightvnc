@@ -30,6 +30,9 @@
 #include "NamedPipe.h"
 #include "thread/LocalMutex.h"
 #include "SecurityAttributes.h"
+#include "DynamicLibrary.h"
+
+typedef BOOL(WINAPI* pGetNamedPipeClientProcessId)(HANDLE Pipe, PULONG ClientProcessId);
 
 /**
  * Server fabric of pipes.
@@ -83,6 +86,18 @@ public:
 
 private:
   void createServerPipe() throw(Exception);
+
+  // returns True on every error 
+  bool checkOtherSideBinaryName(HANDLE hPipe);
+
+  // loads GetNamedPipeClientProcessId (Vista or later) from kernel32
+  static void initialize();
+  static volatile bool m_initialized;
+
+private:
+  static DynamicLibrary* m_kernel32Library;
+  static pGetNamedPipeClientProcessId m_GetNamedPipeClientProcessId;
+
 private:
   StringStorage m_pipeName;
   WindowsEvent m_winEvent;

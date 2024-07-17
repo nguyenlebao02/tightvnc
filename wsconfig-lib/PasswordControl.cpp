@@ -33,7 +33,10 @@
 #include "tvnserver/resource.h"
 
 PasswordControl::PasswordControl(Control *changeButton, Control *unsetButton)
-: m_enabled(true), m_changeButton(changeButton), m_unsetButton(unsetButton)
+: m_enabled(true), 
+  m_changeButton(changeButton), 
+  m_unsetButton(unsetButton),
+  m_state(NoPassword)
 {
   updateControlsState();
 }
@@ -43,10 +46,6 @@ PasswordControl::~PasswordControl()
   releaseCryptedPassword();
 }
 
-bool PasswordControl::hasPassword() const
-{
-  return m_cryptedPassword.size() != 0;
-}
 
 void PasswordControl::setEnabled(bool enabled)
 {
@@ -66,7 +65,7 @@ void PasswordControl::unsetPassword(bool promtUser, HWND parentWindow)
   }
 
   releaseCryptedPassword();
-
+  m_state = ResetPassword;
   updateControlsState();
 }
 
@@ -91,12 +90,9 @@ void PasswordControl::setPassword(const TCHAR *plainText)
 
 void PasswordControl::setCryptedPassword(const char *cryptedPass)
 {
-  releaseCryptedPassword();
-
   m_cryptedPassword.resize(8);
   memcpy(&m_cryptedPassword.front(), cryptedPass, m_cryptedPassword.size());
-
-  updateControlsState();
+  m_state = NewPassword;
 }
 
 const char *PasswordControl::getCryptedPassword() const
@@ -110,7 +106,7 @@ const char *PasswordControl::getCryptedPassword() const
 
 bool PasswordControl::showChangePasswordModalDialog(Control *parent)
 {
-  ChangePasswordDialog changePasswordDialog(parent, !hasPassword());
+  ChangePasswordDialog changePasswordDialog(parent, m_state != NewPassword && m_state != ResetPassword);
 
   if (changePasswordDialog.showModal() != IDOK) {
     return false;
@@ -124,7 +120,7 @@ bool PasswordControl::showChangePasswordModalDialog(Control *parent)
 void PasswordControl::updateControlsState()
 {
   if (m_changeButton != 0) {
-    if (hasPassword()) {
+    if (m_state == OldPassword || m_state == NewPassword) {
       m_changeButton->setText(StringTable::getString(IDS_CHANGE_PASSWORD_CAPTION));
     } else {
       m_changeButton->setText(StringTable::getString(IDS_SET_PASSWORD_CAPTION));
@@ -132,7 +128,7 @@ void PasswordControl::updateControlsState()
     m_changeButton->setEnabled(m_enabled);
   }
   if (m_unsetButton != 0) {
-    m_unsetButton->setEnabled(m_enabled && hasPassword());
+    m_unsetButton->setEnabled(m_enabled && (m_state == OldPassword || m_state == NewPassword));
   }
 }
 

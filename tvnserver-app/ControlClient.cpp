@@ -387,12 +387,48 @@ void ControlClient::addClientMsgRcvd()
 //  ZombieKiller::getInstance()->addZombie(newConnectionThread);
   m_outgoingConnectionThreadCollector.addThread(newConnectionThread);
 }
+bool allZeroes(unsigned char p[ServerConfig::VNC_PASSWORD_SIZE]) {
+  for (int i = 0; i < ServerConfig::VNC_PASSWORD_SIZE; i++) {
+    if (p[i] != 0) {
+      return false;
+    }
+  }
+  return true;
+}
 
 void ControlClient::setServerConfigMsgRcvd()
 {
   m_gate->writeUInt32(ControlProto::REPLY_OK);
+  ServerConfig cfg;
+  cfg.deserialize(m_gate);
+  ServerConfig* old = Configurator::getInstance()->getServerConfig();
+  unsigned char tmp[ServerConfig::VNC_PASSWORD_SIZE];
 
-  Configurator::getInstance()->getServerConfig()->deserialize(m_gate);
+  if (cfg.hasPrimaryPassword()) {
+    cfg.getPrimaryPassword(tmp);
+    if (allZeroes(tmp)) { 
+      // was not changed
+      old->getPrimaryPassword(tmp);
+      cfg.setPrimaryPassword(tmp);
+    }
+  }
+  if (cfg.hasReadOnlyPassword()) {
+    cfg.getReadOnlyPassword(tmp);
+    if (allZeroes(tmp)) {
+      // was not changed
+      old->getReadOnlyPassword(tmp);
+      cfg.setReadOnlyPassword(tmp);
+    }
+  }
+  if (cfg.hasControlPassword()) {
+    cfg.getControlPassword(tmp);
+    if (allZeroes(tmp)) {
+      // was not changed
+      old->getControlPassword(tmp);
+      cfg.setControlPassword(tmp);
+    }
+  }
+  *old = cfg;
   Configurator::getInstance()->save();
   Configurator::getInstance()->load();
 }
@@ -423,7 +459,17 @@ void ControlClient::getServerConfigMsgRcvd()
 {
   m_gate->writeUInt32(ControlProto::REPLY_OK);
 
-  Configurator::getInstance()->getServerConfig()->serialize(m_gate);
+  ServerConfig cfg = *Configurator::getInstance()->getServerConfig();
+
+  unsigned char zeroes[ServerConfig::VNC_PASSWORD_SIZE] = {};
+  if (cfg.hasControlPassword())
+    cfg.setControlPassword(zeroes);
+  if (cfg.hasPrimaryPassword())
+    cfg.setPrimaryPassword(zeroes);
+  if (cfg.hasReadOnlyPassword())
+    cfg.setReadOnlyPassword(zeroes);
+
+  cfg.serialize(m_gate);
 }
 
 void ControlClient::sharePrimaryIdMsgRcvd()

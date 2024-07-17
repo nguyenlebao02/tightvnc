@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="windows-1251"?>
 <VisualStudioProject
 	ProjectType="Visual C++"
-	Version="9,00"
+	Version="9.00"
 	Name="io-lib"
 	ProjectGUID="{BBBC0986-6499-483D-A608-905D6930C55A}"
 	RootNamespace="iolib"
@@ -561,6 +561,10 @@
 				>
 			</File>
 			<File
+				RelativePath=".\DataCopy.cpp"
+				>
+			</File>
+			<File
 				RelativePath=".\DataInputStream.cpp"
 				>
 			</File>
@@ -604,6 +608,10 @@
 			</File>
 			<File
 				RelativePath=".\Channel.h"
+				>
+			</File>
+			<File
+				RelativePath=".\DataCopy.h"
 				>
 			</File>
 			<File

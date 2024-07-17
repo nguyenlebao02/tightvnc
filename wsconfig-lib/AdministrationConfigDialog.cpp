@@ -121,8 +121,11 @@ bool AdministrationConfigDialog::validateInput()
     return false;
   }
 
+  bool passwordSpecified = m_cpControl->getState() == PasswordControl::OldPassword ||
+                           m_cpControl->getState() == PasswordControl::NewPassword;
+
   // FIXME: Code duplicate (see ServerConfigDialog class).
-  if (!m_cpControl->hasPassword() && m_useControlAuth.isChecked()) {
+  if (!passwordSpecified && m_useControlAuth.isChecked()) {
     MessageBox(m_ctrlThis.getWindow(),
                StringTable::getString(IDS_SET_CONTROL_PASSWORD_NOTIFICATION),
                StringTable::getString(IDS_CAPTION_BAD_INPUT), MB_ICONSTOP | MB_OK);
@@ -257,9 +260,10 @@ void AdministrationConfigDialog::apply()
   m_config->useControlAuth(m_useControlAuth.isChecked());
   m_config->setControlAuthAlwaysChecking(m_repeatControlAuth.isChecked());
 
-  if (m_cpControl->hasPassword()) {
+  if (m_cpControl->getState() == PasswordControl::NewPassword) {
     m_config->setControlPassword((const unsigned char *)m_cpControl->getCryptedPassword());
-  } else {
+  } 
+  if (m_cpControl->getState() == PasswordControl::ResetPassword) {
     m_config->deleteControlPassword();
   }
 

@@ -189,7 +189,10 @@ bool ServerConfigDialog::validateInput()
     return false;
   }
 
-  bool passwordSpecified = m_ppControl->hasPassword() || m_vpControl->hasPassword();
+  bool passwordSpecified = m_ppControl->getState() == PasswordControl::OldPassword || 
+                           m_ppControl->getState() == PasswordControl::NewPassword ||
+                           m_vpControl->getState() == PasswordControl::OldPassword ||
+                           m_vpControl->getState() == PasswordControl::NewPassword;
 
   if (m_acceptRfbConnections.isChecked() &&
       m_useAuthentication.isChecked() &&
@@ -216,17 +219,8 @@ void ServerConfigDialog::updateUI()
   m_acceptRfbConnections.check(m_config->isAcceptingRfbConnections());
   m_acceptHttpConnections.check(m_config->isAcceptingHttpConnections());
 
-  if (m_config->hasPrimaryPassword()) {
-    UINT8 ppCrypted[8];
-    m_config->getPrimaryPassword(ppCrypted);
-    m_ppControl->setCryptedPassword((const char *)ppCrypted);
-  }
-
-  if (m_config->hasReadOnlyPassword()) {
-    UINT8 vpCrypted[8];
-    m_config->getReadOnlyPassword(vpCrypted);
-    m_vpControl->setCryptedPassword((const char *)vpCrypted);
-  }
+  m_ppControl->setHadPassword(m_config->hasPrimaryPassword());
+  m_vpControl->setHadPassword(m_config->hasReadOnlyPassword());
 
   m_useAuthentication.check(m_config->isUsingAuthentication());
 
@@ -281,9 +275,10 @@ void ServerConfigDialog::apply()
   // Primary password.
   //
 
-  if (m_ppControl->hasPassword()) {
+  if (m_ppControl->getState() == PasswordControl::NewPassword) {
     m_config->setPrimaryPassword((const unsigned char *)m_ppControl->getCryptedPassword());
-  } else {
+  } 
+  if (m_ppControl->getState() == PasswordControl::ResetPassword) {
     m_config->deletePrimaryPassword();
   }
 
@@ -291,9 +286,10 @@ void ServerConfigDialog::apply()
   // View only password.
   //
 
-  if (m_vpControl->hasPassword()) {
+  if (m_vpControl->getState() == PasswordControl::NewPassword) {
     m_config->setReadOnlyPassword((const unsigned char *)m_vpControl->getCryptedPassword());
-  } else {
+  }   
+  if (m_vpControl->getState() == PasswordControl::ResetPassword) {
     m_config->deleteReadOnlyPassword();
   }
 

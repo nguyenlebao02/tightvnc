@@ -36,6 +36,14 @@ from gui.
 class PasswordControl
 {
 public:
+  typedef enum {
+    NoPassword,
+    OldPassword,
+    NewPassword,
+    ResetPassword,
+  } State;
+
+public:
   /**
    * Creates new PasswordControl instance.
    * @param changeButton change password button.
@@ -49,6 +57,10 @@ public:
   @param enabled flag that to enable or disable controls.
   */
   void setEnabled(bool enabled);
+
+  void setHadPassword(bool had) { 
+    m_state = had? OldPassword : NoPassword; 
+  };
 
   /**
    * Unsets password and updates dependent controls state.
@@ -69,11 +81,7 @@ public:
   */
   void setCryptedPassword(const char *cryptedPass);
 
-  /**
-  Checks if password is set or unset.
-  @return true if password is specified, false if password is unset.
-  */
-  bool hasPassword() const;
+  State getState() { return m_state; };
 
   /**
   Returns password, specified by user.
@@ -99,6 +107,7 @@ protected:
   std::vector<char> m_cryptedPassword;
 
   bool m_enabled;
+  State m_state;
 };
 
 #endif

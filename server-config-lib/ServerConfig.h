@@ -64,6 +64,9 @@ public:
   ServerConfig();
   virtual ~ServerConfig();
 
+  ServerConfig(ServerConfig& other);
+  ServerConfig& operator=(ServerConfig& other);
+
   /**
    * Serializes server config to output stream as byte stream.
    * Thread-safe method.

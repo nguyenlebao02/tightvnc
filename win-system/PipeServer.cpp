@@ -24,6 +24,11 @@
 
 #include "PipeServer.h"
 #include "util/Exception.h"
+#include "Environment.h"
+
+DynamicLibrary* PipeServer::m_kernel32Library = 0;
+pGetNamedPipeClientProcessId PipeServer::m_GetNamedPipeClientProcessId = 0;
+volatile bool PipeServer::m_initialized = false;
 
 PipeServer::PipeServer(const TCHAR *name, unsigned int bufferSize,
                        SecurityAttributes *secAttr,
@@ -33,6 +38,10 @@ PipeServer::PipeServer(const TCHAR *name, unsigned int bufferSize,
   m_serverPipe(INVALID_HANDLE_VALUE),
   m_bufferSize(bufferSize)
 {
+  if (!m_initialized) {
+    initialize();
+  }
+
   m_pipeName.format(_T("\\\\.\\pipe\\%s"), name);
 
   createServerPipe();
@@ -45,6 +54,7 @@ void PipeServer::createServerPipe()
                                  FILE_FLAG_OVERLAPPED,     // overlapped mode
                                  PIPE_TYPE_BYTE |          // message type pipe
                                  PIPE_READMODE_BYTE |      // message-read mode
+                                 PIPE_REJECT_REMOTE_CLIENTS | // SF #1629 fix
                                  PIPE_WAIT,                // blocking mode
                                  PIPE_UNLIMITED_INSTANCES, // max. instances
                                  m_bufferSize,             // output buffer size
@@ -99,6 +109,11 @@ NamedPipe *PipeServer::accept()
       throw Exception(errMess.getString());
     }
   }
+
+  if (!checkOtherSideBinaryName(m_serverPipe)) {
+    throw Exception(_T("Pipe client process filename differs from current process"));
+  }
+
   // delete is inside ~NamedPipeTransport()
   NamedPipe *result = new NamedPipe(m_serverPipe, m_bufferSize, true);
 
@@ -133,4 +148,61 @@ void PipeServer::closeConnection()
 
 void PipeServer::waitForConnect(DWORD milliseconds)
 {
+}
+
+void PipeServer::initialize()
+{
+  if (!Environment::isVistaOrLater()) {
+    return;
+  }
+  try {
+    m_kernel32Library = new DynamicLibrary(_T("Kernel32.dll"));
+    m_GetNamedPipeClientProcessId = (pGetNamedPipeClientProcessId)m_kernel32Library->getProcAddress("GetNamedPipeClientProcessId");
+  }
+  catch (...) {
+    return;
+  }
+  m_initialized = true;
+}
+
+bool PipeServer::checkOtherSideBinaryName(HANDLE hPipe)
+{
+  if (!m_initialized)
+    return true;
+
+  ULONG pid;
+
+  // Vista or higher
+  if (!m_GetNamedPipeClientProcessId(hPipe, &pid)) { 
+    return true;
+  }
+
+  WCHAR clientName[MAX_PATH] = {};
+  WCHAR serverName[MAX_PATH] = {};
+
+  HANDLE client = OpenProcess(PROCESS_QUERY_INFORMATION, false, pid);
+  if (0 == client) {
+    return true;
+  }
+
+  if (0 == GetProcessImageFileNameW(client, clientName, sizeof(clientName))) {
+    CloseHandle(client);
+    return true;
+  }
+  CloseHandle(client);
+
+  HANDLE server = GetCurrentProcess();
+  if (0 == server) {
+    return true;
+  }
+  if (0 == GetProcessImageFileNameW(server, serverName, sizeof(serverName))) {
+    CloseHandle(server);
+    return true;
+  }
+  CloseHandle(server);
+
+  if (std::equal(serverName, serverName + MAX_PATH, clientName)) {
+    return true;
+  }
+  return false;
 }

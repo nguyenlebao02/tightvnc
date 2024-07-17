@@ -219,7 +219,7 @@ void ConfigDialog::onApplyButtonClick()
   }
 
   // If reload command is specified then we're working in online mode
-  // and we don't to save configuration locally.
+  // and we don't have to save configuration locally.
   if (m_reloadConfigCommand != NULL) {
     m_reloadConfigCommand->execute();
 
@@ -228,21 +228,21 @@ void ConfigDialog::onApplyButtonClick()
       m_ipAccessControlDialog.updateUI();
       m_ctrlApplyButton.setEnabled(false);
     }
-  } else {
-     // Else we're working in offline mode and we need to save config
-    if (!m_config->save()) {
-      MessageBox(m_ctrlThis.getWindow(),
-                 StringTable::getString(IDS_CANNOT_SAVE_CONFIG),
-                 StringTable::getString(IDS_MBC_ERROR),
-                 MB_OK | MB_ICONERROR);
-    } else {
-      m_ctrlApplyButton.setEnabled(false);
-      MessageBox(m_ctrlThis.getWindow(),
-        StringTable::getString(IDS_OFFLINE_CONFIG_SAVE_NOTIFICATION),
-        StringTable::getString(IDS_MBC_TVNCONTROL),
-        MB_OK | MB_ICONINFORMATION);
-    } // if cannot save.
-  } // if offline mode (reload command not specified).
+    return;
+  } 
+  // We're working in offline mode and we need to save config
+  if (!m_config->save()) {
+    MessageBox(m_ctrlThis.getWindow(),
+               StringTable::getString(IDS_CANNOT_SAVE_CONFIG),
+               StringTable::getString(IDS_MBC_ERROR),
+               MB_OK | MB_ICONERROR);
+    return;
+  } 
+  m_ctrlApplyButton.setEnabled(false);
+  MessageBox(m_ctrlThis.getWindow(),
+    StringTable::getString(IDS_OFFLINE_CONFIG_SAVE_NOTIFICATION),
+    StringTable::getString(IDS_MBC_TVNCONTROL),
+    MB_OK | MB_ICONINFORMATION);
 }
 
 void ConfigDialog::onTabChange()

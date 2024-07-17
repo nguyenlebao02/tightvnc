@@ -27,6 +27,7 @@
 #include "win-system/Environment.h"
 
 #include "file-lib/File.h"
+#include "io-lib/DataCopy.h"
 
 ServerConfig::ServerConfig()
 : m_rfbPort(5900), m_httpPort(5800),
@@ -58,6 +59,22 @@ ServerConfig::~ServerConfig()
 {
 }
 
+ServerConfig::ServerConfig(ServerConfig& other)
+{
+  DataCopy dc;
+  other.serialize(&DataOutputStream(&dc));
+  this->deserialize(&DataInputStream(&dc));
+}
+
+ServerConfig& ServerConfig::operator=(ServerConfig& other) {
+  if (this != &other) {
+    DataCopy dc;
+    other.serialize(&DataOutputStream(&dc));
+    this->deserialize(&DataInputStream(&dc));
+  }
+  return *this;
+}
+
 void ServerConfig::serialize(DataOutputStream *output)
 {
   AutoLock l(this);
@@ -71,8 +88,12 @@ void ServerConfig::serialize(DataOutputStream *output)
   output->writeInt32(m_disconnectAction);
   output->writeInt8(m_acceptRfbConnections ? 1 : 0);
   output->writeInt8(m_acceptHttpConnections ? 1 : 0);
+
+  output->writeInt8(m_hasPrimaryPassword ? 1 : 0);
   output->writeFully(m_primaryPassword, VNC_PASSWORD_SIZE);
+  output->writeInt8(m_hasReadOnlyPassword ? 1 : 0);
   output->writeFully(m_readonlyPassword, VNC_PASSWORD_SIZE);
+  output->writeInt8(m_hasControlPassword ? 1 : 0);
   output->writeFully(m_controlPassword, VNC_PASSWORD_SIZE);
   output->writeInt8(m_useAuthentication ? 1 : 0);
   output->writeInt8(m_onlyLoopbackConnections ? 1 : 0);
@@ -142,10 +163,15 @@ void ServerConfig::deserialize(DataInputStream *input)
   m_disconnectAction = (ServerConfig::DisconnectAction)input->readInt32();
   m_acceptRfbConnections = input->readInt8() == 1;
   m_acceptHttpConnections = input->readInt8() == 1;
+
+  m_hasPrimaryPassword = input->readInt8() == 1;
   input->readFully(m_primaryPassword, VNC_PASSWORD_SIZE);
+  m_hasReadOnlyPassword = input->readInt8() == 1;
   input->readFully(m_readonlyPassword, VNC_PASSWORD_SIZE);
+  m_hasControlPassword = input->readInt8() == 1;
   input->readFully(m_controlPassword, VNC_PASSWORD_SIZE);
   m_useAuthentication = input->readInt8() == 1;
+
   m_onlyLoopbackConnections = input->readInt8() == 1;
   m_enableAppletParamInUrl = input->readInt8() == 1;
   m_logLevel = input->readInt32();
