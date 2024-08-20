@@ -49,13 +49,18 @@ PipeServer::PipeServer(const TCHAR *name, unsigned int bufferSize,
 
 void PipeServer::createServerPipe()
 {
+  DWORD openMode = PIPE_ACCESS_DUPLEX |         // read/write access
+                   FILE_FLAG_OVERLAPPED;        // overlapped mode
+
+  DWORD pipeMode = PIPE_TYPE_BYTE |             // message type pipe
+                   PIPE_READMODE_BYTE |         // message-read mode
+                   PIPE_WAIT;                   // blocking mode
+  if (Environment::isVistaOrLater()) {
+    pipeMode |= PIPE_REJECT_REMOTE_CLIENTS;     // local only
+  }
   m_serverPipe = CreateNamedPipe(m_pipeName.getString(),   // pipe name
-                                 PIPE_ACCESS_DUPLEX |      // read/write access
-                                 FILE_FLAG_OVERLAPPED,     // overlapped mode
-                                 PIPE_TYPE_BYTE |          // message type pipe
-                                 PIPE_READMODE_BYTE |      // message-read mode
-                                 PIPE_REJECT_REMOTE_CLIENTS | // SF #1629 fix
-                                 PIPE_WAIT,                // blocking mode
+                                 openMode,
+                                 pipeMode,
                                  PIPE_UNLIMITED_INSTANCES, // max. instances
                                  m_bufferSize,             // output buffer size
                                  m_bufferSize,             // input buffer size
