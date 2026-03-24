@@ -28,6 +28,7 @@
 #include "RfbDispatcherListener.h"
 #include "RfbCodeRegistrator.h"
 #include "ClientInputEventListener.h"
+#include "server-config-lib/ClientPermissions.h"
 
 class ClientInputHandler : public RfbDispatcherListener
 {
@@ -39,12 +40,16 @@ public:
 
   void setViewOnlyFlag(bool value) { m_viewOnly = value; }
 
+  // Set granular permissions for this client connection
+  void setPermissions(const ClientPermissions &perms) { m_permissions = perms; }
+
 protected:
   // Listen function
   virtual void onRequest(UINT32 reqCode, RfbInputGate *input);
 
   ClientInputEventListener *m_extEventListener;
   bool m_viewOnly;
+  ClientPermissions m_permissions;
 };
 
 #endif // __CLIENTINPUTHANDLER_H__

@@ -29,6 +29,9 @@
 #include "thread/Thread.h"
 #include "network/TcpServer.h"
 #include "region/Rect.h"
+#include "server-config-lib/GroupPermissionRule.h"
+#include "server-config-lib/ClientPermissions.h"
+#include <vector>
 
 /**
  * TCP Server that accepts connections and pases them to RfbClientManager.
@@ -59,6 +62,13 @@ public:
    */
   virtual ~RfbServer();
 
+  // Set per-port authentication rules (overrides global config)
+  void setPortAuthRules(const std::vector<GroupPermissionRule> &rules,
+                        UINT32 defaultPerms);
+  bool hasPortAuth() const { return m_hasPortAuth; }
+  const std::vector<GroupPermissionRule> &getPortGroupRules() const { return m_portGroupRules; }
+  UINT32 getPortDefaultPerms() const { return m_portDefaultPerms; }
+
 protected:
   /**
    * Inherited from superclass.
@@ -77,6 +87,14 @@ protected:
    * View port for server.
    */
   ViewPortState m_viewPort;
+
+  /**
+   * Per-port group permission rules (if any).
+   * Empty means: fall back to global config rules.
+   */
+  std::vector<GroupPermissionRule> m_portGroupRules;
+  UINT32 m_portDefaultPerms;
+  bool m_hasPortAuth;  // True if this port has its own auth config
 
 private:
   LogWriter *m_log;

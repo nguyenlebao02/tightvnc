@@ -28,6 +28,8 @@
 
 #include "file-lib/File.h"
 
+#include <algorithm>
+
 ServerConfig::ServerConfig()
 : m_rfbPort(5900), m_httpPort(5800),
   m_disconnectAction(DA_DO_NOTHING), m_logLevel(0), m_useControlAuth(false),
@@ -47,7 +49,9 @@ ServerConfig::ServerConfig()
   m_saveLogToAllUsersPath(false), m_hasControlPassword(false),
   m_showTrayIcon(true),
   m_connectToRdp(false),
-  m_idleTimeout(0)
+  m_idleTimeout(0),
+  m_authMode(AUTH_VNC_ONLY),
+  m_defaultWinAuthPermissions(ClientPermissions::PERM_VIEW_ONLY)
 {
   //memset(m_primaryPassword,  0, sizeof(m_primaryPassword));
   memset(m_readonlyPassword, 0, sizeof(m_readonlyPassword));
@@ -769,4 +773,132 @@ bool ServerConfig::getGrabTransparentWindowsFlag()
 {
   AutoLock lock(&m_objectCS);
   return m_grabTransparentWindows;
+}
+
+//
+// Windows authentication config
+//
+
+ServerConfig::AuthMode ServerConfig::getAuthMode()
+{
+  AutoLock lock(&m_objectCS);
+  return m_authMode;
+}
+
+void ServerConfig::setAuthMode(AuthMode mode)
+{
+  AutoLock lock(&m_objectCS);
+  m_authMode = mode;
+}
+
+bool ServerConfig::isWinAuthEnabled()
+{
+  AutoLock lock(&m_objectCS);
+  return m_authMode == AUTH_WINDOWS_ONLY || m_authMode == AUTH_BOTH;
+}
+
+void ServerConfig::enableWinAuth(bool enabled)
+{
+  AutoLock lock(&m_objectCS);
+  if (enabled) {
+    if (m_authMode == AUTH_VNC_ONLY) {
+      m_authMode = AUTH_BOTH;
+    }
+  } else {
+    if (m_authMode == AUTH_WINDOWS_ONLY || m_authMode == AUTH_BOTH) {
+      m_authMode = AUTH_VNC_ONLY;
+    }
+  }
+}
+
+UINT32 ServerConfig::getDefaultWinAuthPermissions()
+{
+  AutoLock lock(&m_objectCS);
+  return m_defaultWinAuthPermissions;
+}
+
+void ServerConfig::setDefaultWinAuthPermissions(UINT32 perms)
+{
+  AutoLock lock(&m_objectCS);
+  m_defaultWinAuthPermissions = perms;
+}
+
+std::vector<GroupPermissionRule> ServerConfig::getGroupRules()
+{
+  AutoLock lock(&m_objectCS);
+  return m_groupRules;
+}
+
+void ServerConfig::setGroupRules(const std::vector<GroupPermissionRule> &rules)
+{
+  AutoLock lock(&m_objectCS);
+  m_groupRules = rules;
+}
+
+ClientPermissions ServerConfig::resolveGroupPermissions(
+  const std::vector<StringStorage> &userGroups)
+{
+  AutoLock lock(&m_objectCS);
+
+  // Sort rules by priority descending (highest first)
+  std::vector<GroupPermissionRule> sortedRules = m_groupRules;
+  std::sort(sortedRules.begin(), sortedRules.end(),
+            GroupPermissionRule::compareByPriority);
+
+  // Find the first matching rule (highest priority wins)
+  for (size_t r = 0; r < sortedRules.size(); r++) {
+    const GroupPermissionRule &rule = sortedRules[r];
+    for (size_t g = 0; g < userGroups.size(); g++) {
+      if (userGroups[g].isEqualTo(rule.getGroupName().getString())) {
+        return ClientPermissions(rule.getPermissionFlags());
+      }
+    }
+  }
+
+  // No matching rule found, return default permissions
+  return ClientPermissions(m_defaultWinAuthPermissions);
+}
+
+PortMapping ServerConfig::getMainPortMapping()
+{
+  AutoLock lock(&m_objectCS);
+  // Ensure main port mapping has the correct port number
+  m_mainPortMapping.setPort(m_rfbPort);
+  return m_mainPortMapping;
+}
+
+void ServerConfig::setMainPortMapping(const PortMapping &mapping)
+{
+  AutoLock lock(&m_objectCS);
+  m_mainPortMapping = mapping;
+  m_rfbPort = mapping.getPort();
+}
+
+std::vector<PortMapping> ServerConfig::getAllPortMappings()
+{
+  AutoLock lock(&m_objectCS);
+  std::vector<PortMapping> all;
+  // Main port is always first
+  m_mainPortMapping.setPort(m_rfbPort);
+  all.push_back(m_mainPortMapping);
+  // Add extra ports
+  size_t extraCount = m_portMappings.count();
+  for (size_t i = 0; i < extraCount; i++) {
+    all.push_back(*m_portMappings.at(i));
+  }
+  return all;
+}
+
+void ServerConfig::setAllPortMappings(const std::vector<PortMapping> &mappings)
+{
+  AutoLock lock(&m_objectCS);
+  if (mappings.size() > 0) {
+    m_mainPortMapping = mappings[0];
+    m_rfbPort = mappings[0].getPort();
+  }
+  // Clear and rebuild extras
+  m_portMappings.removeAll();
+  for (size_t i = 1; i < mappings.size(); i++) {
+    m_portMappings.pushBack(mappings[i]);
+  }
 }

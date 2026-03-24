@@ -93,6 +93,13 @@ private:
   bool saveVideoRegionConfig(SettingsManager *sm);
   bool loadVideoRegionConfig(SettingsManager *sm, ServerConfig *config);
 
+  bool saveWinAuthConfig(SettingsManager *sm);
+  bool loadWinAuthConfig(SettingsManager *sm, ServerConfig *config);
+
+  // Unified port config: main port + extra ports with per-port display & auth
+  bool savePortConfig(SettingsManager *sm);
+  bool loadPortConfig(SettingsManager *sm, ServerConfig *config);
+
   bool save(SettingsManager *sm);
   bool load(SettingsManager *sm);
 

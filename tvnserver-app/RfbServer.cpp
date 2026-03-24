@@ -32,7 +32,9 @@ RfbServer::RfbServer(const TCHAR *bindHost, unsigned short bindPort,
                      const Rect *viewPort)
 : TcpServer(bindHost, bindPort, false, lockAddr),
   m_clientManager(clientManager),
-  m_log(log)
+  m_log(log),
+  m_portDefaultPerms(ClientPermissions::PERM_FULL_CONTROL),
+  m_hasPortAuth(false)
 {
   if (viewPort != 0) {
     m_viewPort.setArbitraryRect(viewPort);
@@ -52,6 +54,14 @@ RfbServer::RfbServer(const TCHAR *bindHost, unsigned short bindPort,
 RfbServer::~RfbServer()
 {
   m_log->message(_T("Rfb server at %s:%d stopped"), getBindHost(), (int)getBindPort());
+}
+
+void RfbServer::setPortAuthRules(const std::vector<GroupPermissionRule> &rules,
+                                  UINT32 defaultPerms)
+{
+  m_portGroupRules = rules;
+  m_portDefaultPerms = defaultPerms;
+  m_hasPortAuth = true;
 }
 
 void RfbServer::onAcceptConnection(SocketIPv4 *socket)

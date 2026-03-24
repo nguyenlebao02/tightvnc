@@ -27,8 +27,18 @@
 
 #include "region/Rect.h"
 #include "util/DateTime.h"
+#include "util/StringStorage.h"
 #include <vector>
 #include "thread/LocalMutex.h"
+
+// Information about a single physical display/monitor.
+struct DisplayInfo
+{
+  Rect rect;                       // Monitor rect (relative to virtual screen origin)
+  StringStorage devicePath;        // Device name, e.g. "\\.\DISPLAY1"
+  unsigned char displayNumber;     // 1-based display index
+  bool isPrimary;                  // True if this is the primary monitor
+};
 
 class WindowsDisplays
 {
@@ -43,6 +53,12 @@ public:
 
   // Returns a vector that contain dispalys coordinates at the current time.
   std::vector<Rect> getDisplays();
+
+  // Returns detailed info about all displays (device path, rect, number).
+  std::vector<DisplayInfo> getDisplayInfos();
+
+  // Find display number (1-based) by device path. Returns 0 if not found.
+  unsigned char findDisplayByDevicePath(const TCHAR *devicePath);
 
 private:
   // Updates internal information to a current state.
@@ -60,6 +76,7 @@ private:
   int m_yVirtualScreen;
 
   std::vector<Rect> m_displayRects;
+  std::vector<DisplayInfo> m_displayInfos;
   LocalMutex m_displayRectsMutex;
   
   static const unsigned int UPDATE_INTERVAL = 3000;

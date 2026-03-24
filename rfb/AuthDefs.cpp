@@ -35,6 +35,8 @@ UINT32 SecurityDefs::convertFromAuthType(UINT32 authType)
     return NONE;
   case AuthDefs::VNC:
     return VNC;
+  case AuthDefs::EXTERNAL:
+    return TIGHT; // External auth requires Tight protocol
   }
 
   return INVALID; // no corresponding authentication method
@@ -47,6 +49,8 @@ UINT32 AuthDefs::convertFromSecurityType(UINT32 securityType)
     return NONE;
   case SecurityDefs::VNC:
     return VNC;
+  case SecurityDefs::TIGHT:
+    return EXTERNAL; // Tight security can carry external auth
   }
 
   return 0; // no corresponding authentication method

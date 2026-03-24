@@ -31,6 +31,7 @@
 #include "win-system/RegistryKey.h"
 
 #include "Configurator.h"
+#include "GroupPermissionRule.h"
 #include "tvnserver-app/NamingDefs.h"
 
 Configurator *Configurator::s_instance = NULL;
@@ -165,6 +166,12 @@ bool Configurator::save(SettingsManager *sm)
   if (!saveVideoRegionConfig(sm)) {
     saveResult = false;
   }
+  if (!saveWinAuthConfig(sm)) {
+    saveResult = false;
+  }
+  if (!savePortConfig(sm)) {
+    saveResult = false;
+  }
   return saveResult;
 }
 
@@ -199,6 +206,12 @@ bool Configurator::load(SettingsManager *sm)
     loadResult = false;
   }
   if (!loadVideoRegionConfig(sm, &m_serverConfig)) {
+    loadResult = false;
+  }
+  if (!loadWinAuthConfig(sm, &m_serverConfig)) {
+    loadResult = false;
+  }
+  if (!loadPortConfig(sm, &m_serverConfig)) {
     loadResult = false;
   }
 
@@ -874,4 +887,154 @@ void Configurator::updateLogDirPath()
     m_serverConfig.isSaveLogToAllUsersPathFlagEnabled(),
     &pathToLogDirectory);
   m_serverConfig.setLogFileDir(pathToLogDirectory.getString());
+}
+
+bool Configurator::saveWinAuthConfig(SettingsManager *sm)
+{
+  bool saveResult = true;
+
+  if (!sm->setUINT(_T("AuthMode"),
+      (UINT)m_serverConfig.getAuthMode())) {
+    saveResult = false;
+  }
+  if (!sm->setUINT(_T("DefaultWinAuthPermissions"),
+      (UINT)m_serverConfig.getDefaultWinAuthPermissions())) {
+    saveResult = false;
+  }
+
+  // Save group permission rules as comma-separated string
+  std::vector<GroupPermissionRule> rules = m_serverConfig.getGroupRules();
+  StringStorage rulesStr(_T(""));
+
+  for (size_t i = 0; i < rules.size(); i++) {
+    StringStorage ruleStr;
+    rules[i].toString(&ruleStr);
+    rulesStr.appendString(ruleStr.getString());
+    if (i != rules.size() - 1) {
+      rulesStr.appendString(_T(","));
+    }
+  }
+
+  if (!sm->setString(_T("WinAuthGroupRules"), rulesStr.getString())) {
+    saveResult = false;
+  }
+
+  return saveResult;
+}
+
+bool Configurator::loadWinAuthConfig(SettingsManager *sm, ServerConfig *config)
+{
+  bool loadResult = true;
+  UINT uintVal;
+
+  if (!sm->getUINT(_T("AuthMode"), &uintVal)) {
+    loadResult = false;
+  } else {
+    m_isConfigLoadedPartly = true;
+    config->setAuthMode((ServerConfig::AuthMode)uintVal);
+  }
+
+  if (!sm->getUINT(_T("DefaultWinAuthPermissions"), &uintVal)) {
+    loadResult = false;
+  } else {
+    m_isConfigLoadedPartly = true;
+    config->setDefaultWinAuthPermissions((UINT32)uintVal);
+  }
+
+  // Load group permission rules from comma-separated string
+  StringStorage rulesStr;
+  if (!sm->getString(_T("WinAuthGroupRules"), &rulesStr)) {
+    loadResult = false;
+  } else {
+    m_isConfigLoadedPartly = true;
+    std::vector<GroupPermissionRule> rules;
+
+    if (!rulesStr.isEmpty()) {
+      // Split by comma
+      size_t count = 0;
+      rulesStr.split(_T(","), NULL, &count);
+      if (count != 0) {
+        std::vector<StringStorage> chunks(count);
+        rulesStr.split(_T(","), &chunks.front(), &count);
+
+        for (size_t i = 0; i < count; i++) {
+          if (!chunks[i].isEmpty()) {
+            GroupPermissionRule rule;
+            if (GroupPermissionRule::parse(chunks[i].getString(), &rule)) {
+              rules.push_back(rule);
+            }
+          }
+        }
+      }
+    }
+
+    config->setGroupRules(rules);
+  }
+
+  return loadResult;
+}
+
+bool Configurator::savePortConfig(SettingsManager *sm)
+{
+  bool saveResult = true;
+  AutoLock l(&m_serverConfig);
+
+  std::vector<PortMapping> allPorts = m_serverConfig.getAllPortMappings();
+  UINT portCount = (UINT)allPorts.size();
+
+  if (!sm->setUINT(_T("PortCount"), portCount)) {
+    saveResult = false;
+  }
+
+  for (UINT i = 0; i < portCount; i++) {
+    StringStorage keyName;
+    keyName.format(_T("Port%u"), i);
+
+    StringStorage portStr;
+    allPorts[i].toString(&portStr);
+
+    if (!sm->setString(keyName.getString(), portStr.getString())) {
+      saveResult = false;
+    }
+  }
+
+  return saveResult;
+}
+
+bool Configurator::loadPortConfig(SettingsManager *sm, ServerConfig *config)
+{
+  bool loadResult = true;
+  UINT portCount = 0;
+
+  if (!sm->getUINT(_T("PortCount"), &portCount)) {
+    // No new format found — keep existing config
+    return true;
+  }
+
+  m_isConfigLoadedPartly = true;
+  std::vector<PortMapping> allPorts;
+
+  for (UINT i = 0; i < portCount; i++) {
+    StringStorage keyName;
+    keyName.format(_T("Port%u"), i);
+
+    StringStorage portStr;
+    if (!sm->getString(keyName.getString(), &portStr)) {
+      loadResult = false;
+      continue;
+    }
+
+    PortMapping pm;
+    if (PortMapping::parse(portStr.getString(), &pm)) {
+      allPorts.push_back(pm);
+    } else {
+      loadResult = false;
+    }
+  }
+
+  if (allPorts.size() > 0) {
+    config->setAllPortMappings(allPorts);
+  }
+
+  return loadResult;
 }

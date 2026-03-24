@@ -166,11 +166,17 @@ BOOL ConfigDialog::onInitDialog()
   m_videoRegionsConfigDialog.create();
   moveDialogToTabControl(&m_videoRegionsConfigDialog);
 
+  m_winAuthConfigDialog.setParent(&m_ctrlThis);
+  m_winAuthConfigDialog.setParentDialog(this);
+  m_winAuthConfigDialog.create();
+  moveDialogToTabControl(&m_winAuthConfigDialog);
+
   m_tabControl.addTab(&m_serverConfigDialog, StringTable::getString(IDS_SERVER_TAB_CAPTION));
   m_tabControl.addTab(&m_portMappingDialog, StringTable::getString(IDS_EXTRA_PORTS_TAB_CAPTION));
   m_tabControl.addTab(&m_ipAccessControlDialog, StringTable::getString(IDS_ACCESS_CONTROL_TAB_CAPTION));
   m_tabControl.addTab(&m_videoRegionsConfigDialog, StringTable::getString(IDS_VIDEO_WINDOWS_TAB_CAPTION));
   m_tabControl.addTab(&m_administrationConfigDialog, StringTable::getString(IDS_ADMINISTRATION_TAB_CAPTION));
+  m_tabControl.addTab(&m_winAuthConfigDialog, _T("Windows Auth"));
 
   m_tabControl.removeTab(0);
 
@@ -214,6 +220,7 @@ void ConfigDialog::onApplyButtonClick()
     m_serverConfigDialog.apply();
     m_ipAccessControlDialog.apply();
     m_videoRegionsConfigDialog.apply();
+    m_winAuthConfigDialog.apply();
   } else {
     return ;
   }
@@ -289,6 +296,10 @@ bool ConfigDialog::validateInput()
   }
   if (!m_ipAccessControlDialog.validateInput()) {
     m_tabControl.showTab(&m_ipAccessControlDialog);
+    return false;
+  }
+  if (!m_winAuthConfigDialog.validateInput()) {
+    m_tabControl.showTab(&m_winAuthConfigDialog);
     return false;
   }
 #ifdef USE_EXTRA_TABS

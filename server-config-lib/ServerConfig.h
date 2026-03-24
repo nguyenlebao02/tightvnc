@@ -36,8 +36,11 @@
 #include "io-lib/DataOutputStream.h"
 #include "io-lib/IOException.h"
 #include "region/RectSerializer.h"
+#include "ClientPermissions.h"
+#include "GroupPermissionRule.h"
 
 #include <shlobj.h>
+#include <vector>
 
 class ServerConfig : public Lockable
 {
@@ -58,6 +61,13 @@ public:
     DA_DO_NOTHING = 0,
     DA_LOCK_WORKSTATION = 1,
     DA_LOGOUT_WORKSTATION = 2
+  };
+
+  // Authentication mode: determines which auth methods are available
+  enum AuthMode {
+    AUTH_VNC_ONLY     = 0,  // Traditional VNC password only (default)
+    AUTH_WINDOWS_ONLY = 1,  // Windows user/password only
+    AUTH_BOTH         = 2   // Both VNC password and Windows auth
   };
 
 public:
@@ -249,6 +259,46 @@ public:
   bool isLoopbackConnectionsAllowed();
 
   //
+  // Windows authentication and group-based permissions
+  //
+
+  AuthMode getAuthMode();
+  void setAuthMode(AuthMode mode);
+
+  // Convenience: returns true if auth mode includes Windows auth
+  bool isWinAuthEnabled();
+  // Convenience: enables/disables Windows auth (toggles BOTH vs VNC_ONLY)
+  void enableWinAuth(bool enabled);
+
+  UINT32 getDefaultWinAuthPermissions();
+  void setDefaultWinAuthPermissions(UINT32 perms);
+
+  // Returns a copy of group rules (thread-safe)
+  std::vector<GroupPermissionRule> getGroupRules();
+  void setGroupRules(const std::vector<GroupPermissionRule> &rules);
+
+  // Resolve permissions for a list of Windows group names.
+  // Returns the permissions from the highest-priority matching rule,
+  // or the default permissions if no rule matches.
+  ClientPermissions resolveGroupPermissions(
+    const std::vector<StringStorage> &userGroups);
+
+  //
+  // Main port mapping (unified port config)
+  //
+
+  // Returns the main port mapping (port + display + per-port auth).
+  // Thread-safe: returns a copy.
+  PortMapping getMainPortMapping();
+  void setMainPortMapping(const PortMapping &mapping);
+
+  // Returns all port mappings: main (index 0) + extras.
+  // Thread-safe: returns copies.
+  std::vector<PortMapping> getAllPortMappings();
+  // Sets all port mappings: index 0 = main, rest = extras.
+  void setAllPortMappings(const std::vector<PortMapping> &mappings);
+
+  //
   // Video regions
   //
 
@@ -381,7 +431,8 @@ protected:
   // Port mapping config
   //
 
-  PortMappingContainer m_portMappings;
+  PortMapping m_mainPortMapping;  // Main port (5900 default) with display + auth
+  PortMappingContainer m_portMappings;  // Extra ports
 
   //
   // Ip access control config
@@ -389,6 +440,14 @@ protected:
 
   IpAccessControl m_accessControlContainer;
   bool m_allowLoopbackConnections;
+
+  //
+  // Windows authentication config
+  //
+
+  AuthMode m_authMode;
+  UINT32 m_defaultWinAuthPermissions;
+  std::vector<GroupPermissionRule> m_groupRules;
 
   //
   // Video regions

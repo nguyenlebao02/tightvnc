@@ -30,6 +30,7 @@
 #include "desktop/Desktop.h"
 #include "network/RfbOutputGate.h"
 #include "log-writer/LogWriter.h"
+#include "server-config-lib/ClientPermissions.h"
 
 class ClipboardExchange : public RfbDispatcherListener, public Thread
 {
@@ -39,6 +40,9 @@ public:
   virtual ~ClipboardExchange();
 
   void sendClipboard(const StringStorage *newClipboard);
+
+  // Set granular permissions for clipboard access
+  void setPermissions(const ClientPermissions &perms) { m_permissions = perms; }
 
 protected:
   // Listen function
@@ -51,6 +55,7 @@ private:
 
   bool m_viewOnly;
   bool m_isUtf8ClipboardEnabled;
+  ClientPermissions m_permissions;
   Desktop *m_desktop;
   RfbOutputGate *m_output;
 

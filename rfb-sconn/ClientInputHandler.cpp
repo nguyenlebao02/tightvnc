@@ -29,7 +29,9 @@ ClientInputHandler::ClientInputHandler(RfbCodeRegistrator *codeRegtor,
                                        ClientInputEventListener *extEventListener,
                                        bool viewOnly)
 : m_extEventListener(extEventListener),
-  m_viewOnly(viewOnly)
+  m_viewOnly(viewOnly),
+  m_permissions(viewOnly ? ClientPermissions::PERM_VIEW_ONLY
+                         : ClientPermissions::PERM_FULL_CONTROL)
 {
   // Request codes
   codeRegtor->regCode(ClientMsgDefs::KEYBOARD_EVENT, this);
@@ -48,7 +50,8 @@ void ClientInputHandler::onRequest(UINT32 reqCode, RfbInputGate *input)
       bool down = input->readUInt8() != 0;
       input->readUInt16(); // Pad
       UINT32 keyCode = input->readUInt32();
-      if (!m_viewOnly) {
+      // Granular check: needs keyboard permission (or not view-only)
+      if (!m_viewOnly && m_permissions.canKeyboard()) {
         m_extEventListener->onKeyboardEvent(keyCode, down);
       }
     }
@@ -58,7 +61,8 @@ void ClientInputHandler::onRequest(UINT32 reqCode, RfbInputGate *input)
       UINT8 buttonMask = input->readUInt8();
       UINT16 x = input->readUInt16();
       UINT16 y = input->readUInt16();
-      if (!m_viewOnly) {
+      // Granular check: needs mouse permission (or not view-only)
+      if (!m_viewOnly && m_permissions.canMouse()) {
         m_extEventListener->onMouseEvent(x, y, buttonMask);
       }
     }

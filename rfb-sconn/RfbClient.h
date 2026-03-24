@@ -41,6 +41,7 @@
 #include "ClientInputEventListener.h"
 #include "tvnserver-app/NewConnectionEvents.h"
 #include "util/DemandTimer.h"
+#include "server-config-lib/ClientPermissions.h"
 
 class ClientAuthListener;
 
@@ -83,6 +84,10 @@ public:
 
   bool getSharedFlag() const { return m_shared; }
   bool getViewOnlyAuth() const { return m_viewOnlyAuth; }
+
+  // Granular permissions (from Windows auth or derived from VNC auth)
+  ClientPermissions getPermissions() const { return m_permissions; }
+  void setPermissions(const ClientPermissions &perms) { m_permissions = perms; }
 
   void setViewOnlyFlag(bool value);
 
@@ -142,6 +147,7 @@ private:
   bool m_isOutgoing;
   bool m_viewOnlyAuth;
   bool m_shared;
+  ClientPermissions m_permissions;
 
   LogWriter *m_log;
 

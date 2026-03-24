@@ -39,6 +39,8 @@ ClipboardExchange::ClipboardExchange(RfbCodeRegistrator *codeRegtor,
   m_viewOnly(viewOnly),
   m_hasNewClip(false),
   m_isUtf8ClipboardEnabled(false),
+  m_permissions(viewOnly ? ClientPermissions::PERM_VIEW_ONLY
+                         : ClientPermissions::PERM_FULL_CONTROL),
   m_log(log)
 {
   // Request code
@@ -89,7 +91,7 @@ void ClipboardExchange::onRequestWorker(bool utf8flag, RfbInputGate *input)
 
   input->readFully(&charBuff.front(), length);
   charBuff[length] = '\0';
-  if (m_viewOnly) {
+  if (m_viewOnly || !m_permissions.canClipboard()) {
     return;
   }
 
@@ -126,7 +128,7 @@ void ClipboardExchange::execute()
   while (!isTerminating()) {
     m_newClipWaiter.waitForEvent();
 
-    if (m_hasNewClip && !isTerminating() && !m_viewOnly) {
+    if (m_hasNewClip && !isTerminating() && !m_viewOnly && m_permissions.canClipboard()) {
 
       try {
         const char * data;

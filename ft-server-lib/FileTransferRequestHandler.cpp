@@ -48,10 +48,12 @@ FileTransferRequestHandler::FileTransferRequestHandler(RfbCodeRegistrator *regis
                                                        RfbOutputGate *output,
                                                        Desktop *desktop,
                                                        LogWriter *log,
-                                                       bool enabled)
+                                                       bool enabled,
+                                                       const ClientPermissions &permissions)
 : m_downloadFile(NULL), m_fileInputStream(NULL),
   m_uploadFile(NULL), m_fileOutputStream(NULL),
   m_output(output), m_enabled(enabled),
+  m_permissions(permissions),
   m_log(log)
 {
   m_security = new FileTransferSecurity(desktop, m_log);
@@ -926,6 +928,10 @@ void FileTransferRequestHandler::checkAccess()
   try {
     if (!isFileTransferEnabled()) {
       throw Exception(_T("File transfers is disabled"));
+    }
+    // Check granular permission from Windows auth / VNC auth mapping.
+    if (!m_permissions.canFileTransfer()) {
+      throw Exception(_T("File transfer permission denied for this user"));
     }
     m_security->throwIfAccessDenied();
   } catch (Exception &someEx) {

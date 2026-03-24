@@ -40,6 +40,7 @@
 #include "PortMappingDialog.h"
 #include "IpAccessControlDialog.h"
 #include "VideoRegionsConfigDialog.h"
+#include "WinAuthConfigDialog.h"
 
 #include "tvncontrol-app/ControlCommand.h"
 
@@ -90,6 +91,7 @@ protected:
   AdministrationConfigDialog m_administrationConfigDialog;
   IpAccessControlDialog m_ipAccessControlDialog;
   VideoRegionsConfigDialog m_videoRegionsConfigDialog;
+  WinAuthConfigDialog m_winAuthConfigDialog;
   // Other members
   bool m_isConfiguringService;
 

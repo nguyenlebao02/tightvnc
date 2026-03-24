@@ -33,9 +33,11 @@
 #include "win-system/Environment.h"
 #include "util/AnsiStringStorage.h"
 #include "tvnserver-app/NamingDefs.h"
+#include "win-auth-lib/WinAuthenticator.h"
 
 #include <stdlib.h>
 #include <time.h>
+#include <vector>
 
 RfbInitializer::RfbInitializer(Channel *stream,
                                ClientAuthListener *extAuthListener,
@@ -46,7 +48,11 @@ RfbInitializer::RfbInitializer(Channel *stream,
   m_extAuthListener(extAuthListener),
   m_client(client),
   m_authAllowed(authAllowed),
-  m_viewOnlyAuth(false)
+  m_viewOnlyAuth(false),
+  m_winAuthUsed(false),
+  m_clientPermissions(ClientPermissions::PERM_FULL_CONTROL),
+  m_hasPortRules(false),
+  m_portDefaultPerms(ClientPermissions::PERM_FULL_CONTROL)
 {
   m_output = new DataOutputStream(stream);
   m_input = new DataInputStream(stream);
@@ -131,17 +137,29 @@ void RfbInitializer::doTightAuth()
   // Negotiate tunneling.
   m_output->writeUInt32(0);
   // Negotiate authentication.
-  // FIXME: Recognize authentication types.
-  if (Configurator::getInstance()->getServerConfig()->isUsingAuthentication()
-      && m_authAllowed) {
+  ServerConfig *srvConf = Configurator::getInstance()->getServerConfig();
+  ServerConfig::AuthMode authMode = srvConf->getAuthMode();
+
+  if (srvConf->isUsingAuthentication() && m_authAllowed) {
     CapContainer authInfo;
-    authInfo.addCap(AuthDefs::VNC, VendorDefs::STANDARD, AuthDefs::SIG_VNC);
+
+    // Offer auth types based on configured auth mode
+    if (authMode == ServerConfig::AUTH_VNC_ONLY ||
+        authMode == ServerConfig::AUTH_BOTH) {
+      authInfo.addCap(AuthDefs::VNC, VendorDefs::STANDARD, AuthDefs::SIG_VNC);
+    }
+    if (authMode == ServerConfig::AUTH_WINDOWS_ONLY ||
+        authMode == ServerConfig::AUTH_BOTH) {
+      authInfo.addCap(AuthDefs::EXTERNAL, VendorDefs::TIGHTVNC,
+                      AuthDefs::SIG_EXTERNAL);
+    }
+
     m_output->writeUInt32(authInfo.getCapCount());
     authInfo.sendCaps(m_output);
     // Read the security type selected by the client.
     UINT32 clientAuthValue = m_input->readUInt32();
     if (!authInfo.includes(clientAuthValue)) {
-      throw Exception(_T(""));
+      throw Exception(_T("Client selected unsupported auth type"));
     }
     doAuth(clientAuthValue);
   } else {
@@ -154,10 +172,12 @@ void RfbInitializer::doAuth(UINT32 authType)
 {
   if (authType == AuthDefs::VNC) {
     doVncAuth();
+  } else if (authType == AuthDefs::EXTERNAL) {
+    doWinAuth();
   } else if (authType == AuthDefs::NONE) {
     doAuthNone();
   } else {
-    throw Exception(_T(""));
+    throw Exception(_T("Unsupported authentication type"));
   }
   // Perform additional work via a listener.
   m_extAuthListener->onCheckAccessControl(m_client);
@@ -222,6 +242,113 @@ void RfbInitializer::doVncAuth()
 
 void RfbInitializer::doAuthNone()
 {
+}
+
+void RfbInitializer::doWinAuth()
+{
+  // Wire protocol for Windows auth (EXTERNAL):
+  // Server → Client: (nothing extra, client knows to send credentials)
+  // Client → Server: UINT32 usernameLen, username bytes,
+  //                   UINT32 passwordLen, password bytes
+
+  // Read username
+  UINT32 usernameLen = m_input->readUInt32();
+  if (usernameLen == 0 || usernameLen > 256) {
+    throw AuthException(_T("Invalid username length in Windows auth"));
+  }
+  std::vector<char> usernameBuf(usernameLen + 1, 0);
+  m_input->readFully(&usernameBuf[0], usernameLen);
+  usernameBuf[usernameLen] = 0;
+
+  // Read password
+  UINT32 passwordLen = m_input->readUInt32();
+  if (passwordLen > 256) {
+    throw AuthException(_T("Invalid password length in Windows auth"));
+  }
+  std::vector<TCHAR> passwordBuf(passwordLen + 1, 0);
+  // Read as bytes first
+  std::vector<char> passAnsi(passwordLen + 1, 0);
+  m_input->readFully(&passAnsi[0], passwordLen);
+  passAnsi[passwordLen] = 0;
+
+  // Check for ban before auth
+  checkForBan();
+
+  // Convert ANSI to TCHAR
+  StringStorage username;
+  AnsiStringStorage ansiUser(&usernameBuf[0]);
+  ansiUser.toStringStorage(&username);
+
+  // Split "DOMAIN\\username" if present
+  StringStorage domain;
+  StringStorage user;
+  const TCHAR *backslash = _tcschr(username.getString(), _T('\\'));
+  if (backslash != NULL) {
+    size_t domainLen = backslash - username.getString();
+    TCHAR *domBuf = new TCHAR[domainLen + 1];
+    _tcsncpy_s(domBuf, domainLen + 1, username.getString(), domainLen);
+    domBuf[domainLen] = 0;
+    domain.setString(domBuf);
+    delete[] domBuf;
+    user.setString(backslash + 1);
+  } else {
+    domain.setString(_T("."));
+    user.setString(username.getString());
+  }
+
+  // Convert password ANSI to TCHAR
+  AnsiStringStorage ansiPass(&passAnsi[0]);
+  StringStorage passStr;
+  ansiPass.toStringStorage(&passStr);
+
+  // Copy to mutable buffer for SecureZeroMemory
+  size_t passLen = passStr.getLength() + 1;
+  std::vector<TCHAR> mutablePass(passLen);
+  _tcscpy_s(&mutablePass[0], passLen, passStr.getString());
+
+  // Perform Windows authentication
+  // Use per-port rules if configured, otherwise fall back to global config
+  ServerConfig *srvConf = Configurator::getInstance()->getServerConfig();
+  std::vector<GroupPermissionRule> rules;
+  UINT32 defaultPerms;
+  if (m_hasPortRules) {
+    rules = m_portGroupRules;
+    defaultPerms = m_portDefaultPerms;
+  } else {
+    rules = srvConf->getGroupRules();
+    defaultPerms = srvConf->getDefaultWinAuthPermissions();
+  }
+
+  WinAuthenticator authenticator(NULL); // No log in initializer context
+  WinAuthResult result = authenticator.performAuth(
+    user.getString(),
+    &mutablePass[0],
+    domain.getString(),
+    rules,
+    defaultPerms);
+
+  // Clear password from ANSI buffer too
+  SecureZeroMemory(&passAnsi[0], passAnsi.size());
+
+  if (!result.success) {
+    // Notify about failed auth attempt
+    m_extAuthListener->onAuthFailed(m_client);
+
+    StringStorage clientAddr;
+    m_client->getPeerHost(&clientAddr);
+    StringStorage errMsg;
+    errMsg.format(_T("Windows auth failed for '%s' from %s: %s"),
+                  user.getString(), clientAddr.getString(),
+                  result.errorMessage.getString());
+    throw AuthException(errMsg.getString());
+  }
+
+  // Auth succeeded — store permissions and mark as Windows auth
+  m_winAuthUsed = true;
+  m_clientPermissions = result.permissions;
+
+  // Set view-only flag for backward compatibility
+  m_viewOnlyAuth = m_clientPermissions.isViewOnly();
 }
 
 void RfbInitializer::initAuthenticate()
@@ -353,4 +480,12 @@ void RfbInitializer::checkForBan()
   if (m_extAuthListener->onCheckForBan(m_client)) {
     throw AuthException(_T("Your connection has been rejected"));
   }
+}
+
+void RfbInitializer::setPortGroupRules(
+  const std::vector<GroupPermissionRule> &rules, UINT32 defaultPerms)
+{
+  m_portGroupRules = rules;
+  m_portDefaultPerms = defaultPerms;
+  m_hasPortRules = true;
 }

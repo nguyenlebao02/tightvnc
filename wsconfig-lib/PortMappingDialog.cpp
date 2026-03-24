@@ -26,6 +26,33 @@
 #include "EditPortMappingDialog.h"
 #include "ConfigDialog.h"
 #include "tvnserver/resource.h"
+#include "server-config-lib/ClientPermissions.h"
+
+// Build a human-readable display string for a port mapping entry.
+static void buildDisplayString(const PortMapping *pm, StringStorage *out)
+{
+  StringStorage rectStr;
+  pm->getRect().toString(&rectStr);
+
+  const StringStorage &devPath = pm->getDevicePath();
+  bool hasDevice = (devPath.getLength() > 0);
+  bool hasAuth = !pm->getGroupRules().empty() ||
+                 pm->getDefaultPermissions() != ClientPermissions::PERM_FULL_CONTROL;
+
+  if (hasDevice && hasAuth) {
+    out->format(_T(":%d  %s  [%s]  [Auth]"),
+                pm->getPort(), rectStr.getString(), devPath.getString());
+  } else if (hasDevice) {
+    out->format(_T(":%d  %s  [%s]"),
+                pm->getPort(), rectStr.getString(), devPath.getString());
+  } else if (hasAuth) {
+    out->format(_T(":%d  %s  [Auth]"),
+                pm->getPort(), rectStr.getString());
+  } else {
+    out->format(_T(":%d  %s"),
+                pm->getPort(), rectStr.getString());
+  }
+}
 
 PortMappingDialog::PortMappingDialog()
 : BaseDialog(IDD_CONFIG_PORT_MAPPING_PAGE), m_parent(NULL)
@@ -89,7 +116,7 @@ BOOL PortMappingDialog::onInitDialog()
   StringStorage mappingString;
 
   for (size_t i = 0; i < m_extraPorts->count(); i++) {
-    m_extraPorts->at(i)->toString(&mappingString);
+    buildDisplayString(m_extraPorts->at(i), &mappingString);
     _ASSERT((int)i == i);
     m_exPortsListBox.insertString((int)i, mappingString.getString());
   }
@@ -117,7 +144,7 @@ void PortMappingDialog::onAddButtonClick()
   if (addDialog.showModal() == IDOK) {
     {
       StringStorage mappingString;
-      newPM.toString(&mappingString);
+      buildDisplayString(&newPM, &mappingString);
       m_exPortsListBox.addString(mappingString.getString());
     }
 
@@ -144,7 +171,7 @@ void PortMappingDialog::onEditButtonClick()
 
   if (editDialog.showModal() == IDOK) {
     StringStorage mappingString;
-    pPM->toString(&mappingString);
+    buildDisplayString(pPM, &mappingString);
     m_exPortsListBox.setItemText(selectedIndex, mappingString.getString());
 
     ((ConfigDialog *)m_parent)->updateApplyButtonState();

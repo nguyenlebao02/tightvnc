@@ -27,8 +27,16 @@
 
 #include "gui/BaseDialog.h"
 #include "gui/TextBox.h"
+#include "gui/ComboBox.h"
+#include "gui/CheckBox.h"
+#include "gui/ListView.h"
 
 #include "server-config-lib/PortMapping.h"
+#include "server-config-lib/GroupPermissionRule.h"
+#include "server-config-lib/ClientPermissions.h"
+#include "win-system/WindowsDisplays.h"
+
+#include <vector>
 
 class EditPortMappingDialog : public BaseDialog
 {
@@ -59,11 +67,41 @@ protected:
 
   void onOkButtonClick();
   void onCancelButtonClick();
+
+  // Per-port auth helpers
+  void populateDisplayCombo();
+  void populatePermCombos();
+  void loadPortAuthUI();
+  void savePortAuthData();
+  void onPortAuthEnableClick();
+  void onPortAddRuleClick();
+  void onPortRemoveRuleClick();
+  void enablePortAuthControls(bool enable);
+  void refreshPortGroupList();
+
+  static const TCHAR *permissionToString(UINT32 flags);
+  static UINT32 comboIndexToPermission(int index);
+  static int permissionToComboIndex(UINT32 flags);
+
 protected:
   TextBox m_geometryTextBox;
   TextBox m_portTextBox;
   DialogType m_dialogType;
   PortMapping *m_mapping;
+
+  // Extended controls
+  ComboBox m_displayCombo;
+  CheckBox m_portAuthEnable;
+  ComboBox m_portPermCombo;
+  ListView m_portGroupList;
+  TextBox m_portGroupNameEdit;
+  ComboBox m_portGroupPermCombo;
+
+  // Per-port group rules (local copy for editing)
+  std::vector<GroupPermissionRule> m_portRules;
+
+  // Display infos for combo population
+  std::vector<DisplayInfo> m_displayInfos;
 };
 
 #endif

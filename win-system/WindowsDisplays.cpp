@@ -44,6 +44,22 @@ BOOL CALLBACK WindowsDisplays::monitorEnumProc(HMONITOR hMonitor,
             lprcMonitor->right - _this->m_xVirtualScreen,
             lprcMonitor->bottom - _this->m_yVirtualScreen);
   _this->m_displayRects.push_back(rect);
+
+  // Get extended monitor info (device name, primary flag)
+  DisplayInfo info;
+  info.rect = rect;
+  info.displayNumber = (unsigned char)(_this->m_displayInfos.size() + 1);
+  info.isPrimary = false;
+
+  MONITORINFOEX mi;
+  memset(&mi, 0, sizeof(mi));
+  mi.cbSize = sizeof(MONITORINFOEX);
+  if (GetMonitorInfo(hMonitor, &mi)) {
+    info.devicePath.setString(mi.szDevice);
+    info.isPrimary = (mi.dwFlags & MONITORINFOF_PRIMARY) != 0;
+  }
+  _this->m_displayInfos.push_back(info);
+
   return TRUE;
 }
 
@@ -51,6 +67,7 @@ void WindowsDisplays::update()
 {
   if (!isAlreadyUpdated()) {
     m_displayRects.clear();
+    m_displayInfos.clear();
     m_xVirtualScreen = GetSystemMetrics(SM_XVIRTUALSCREEN);
     m_yVirtualScreen = GetSystemMetrics(SM_YVIRTUALSCREEN);
 
@@ -96,4 +113,23 @@ std::vector<Rect> WindowsDisplays::getDisplays()
 {
   update();
   return m_displayRects;
+}
+
+std::vector<DisplayInfo> WindowsDisplays::getDisplayInfos()
+{
+  AutoLock al(&m_displayRectsMutex);
+  update();
+  return m_displayInfos;
+}
+
+unsigned char WindowsDisplays::findDisplayByDevicePath(const TCHAR *devicePath)
+{
+  AutoLock al(&m_displayRectsMutex);
+  update();
+  for (size_t i = 0; i < m_displayInfos.size(); i++) {
+    if (_tcsicmp(m_displayInfos[i].devicePath.getString(), devicePath) == 0) {
+      return m_displayInfos[i].displayNumber;
+    }
+  }
+  return 0; // Not found
 }

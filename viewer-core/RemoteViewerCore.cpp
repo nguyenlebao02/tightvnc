@@ -818,7 +818,16 @@ int RemoteViewerCore::initAuthentication()
     throw Exception(_T("No security types supported. ")
                     _T("Server sent security types, but we do not support any of their."));
   }
+  // Prefer EXTERNAL (Windows Auth) if available and handler is registered,
+  // otherwise fall back to first available auth type.
   int typeSelected = authTypes[0];
+  for (size_t i = 0; i < numEnabled; ++i) {
+    if (authTypes[i] == AuthDefs::EXTERNAL &&
+        m_authHandlers.find(AuthDefs::EXTERNAL) != m_authHandlers.end()) {
+      typeSelected = AuthDefs::EXTERNAL;
+      break;
+    }
+  }
   m_logWriter.detail(_T("Selected type of authentication: %d"), typeSelected);
 
   m_output->writeUInt32(typeSelected);

@@ -37,6 +37,7 @@
 #include "rfb-sconn/RfbDispatcherListener.h"
 #include "FileTransferSecurity.h"
 #include "log-writer/LogWriter.h"
+#include "server-config-lib/ClientPermissions.h"
 
 /**
  * Handler of file transfer plugin client to server messages.
@@ -59,7 +60,8 @@ public:
                              RfbOutputGate *output,
                              Desktop *desktop,
                              LogWriter *log,
-                             bool enabled = true);
+                             bool enabled = true,
+                             const ClientPermissions &permissions = ClientPermissions(ClientPermissions::PERM_FULL_CONTROL));
 
   /**
    * Deletes file transfer request handler.
@@ -166,6 +168,9 @@ protected:
 
   // Determinates if file transfer is enabled.
   bool m_enabled;
+
+  // Granular permissions from Windows auth (or VNC auth mapping).
+  ClientPermissions m_permissions;
 
   LogWriter *m_log;
 };

@@ -31,6 +31,9 @@
 #include "CapContainer.h"
 #include "region/Dimension.h"
 #include "rfb/PixelFormat.h"
+#include "server-config-lib/ClientPermissions.h"
+#include "server-config-lib/GroupPermissionRule.h"
+#include <vector>
 // External listeners
 #include "ClientAuthListener.h"
 
@@ -56,6 +59,16 @@ public:
 
   bool getTightEnabledFlag() const { return m_tightEnabled; }
 
+  // Returns granular permissions resolved after Windows auth.
+  // Only valid after authPhase() if Windows auth was used.
+  ClientPermissions getClientPermissions() const { return m_clientPermissions; }
+  bool wasWinAuthUsed() const { return m_winAuthUsed; }
+
+  // Per-port auth override: if set, use these rules instead of global config
+  void setPortGroupRules(const std::vector<GroupPermissionRule> &rules,
+                         UINT32 defaultPerms);
+  bool hasPortGroupRules() const { return m_hasPortRules; }
+
 protected:
   void initVersion();
   // @throw Exception if loopback isn't allowed.
@@ -73,6 +86,7 @@ protected:
   void doTightAuth();
   void doVncAuth();
   void doAuthNone();
+  void doWinAuth();
 
   // Calls the onCheckForBan() function by the external listener
   // @throw AuthException if current is banned.
@@ -92,9 +106,16 @@ protected:
   bool m_viewOnlyAuth;
   bool m_tightEnabled;
   bool m_authAllowed;
+  bool m_winAuthUsed;
+  ClientPermissions m_clientPermissions;
 
   ClientAuthListener *m_extAuthListener;
   RfbClient *m_client;
+
+  // Per-port auth override
+  bool m_hasPortRules;
+  std::vector<GroupPermissionRule> m_portGroupRules;
+  UINT32 m_portDefaultPerms;
 };
 
 #endif // __RFBINITIALIZER_H__

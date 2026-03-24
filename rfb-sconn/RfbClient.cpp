@@ -205,6 +205,17 @@ void RfbClient::execute()
       m_log->debug(_T("Authenticated with view-only password = %d"), (int)m_viewOnlyAuth);
       m_viewOnly = m_viewOnly || m_viewOnlyAuth;
 
+      // Apply granular permissions from Windows auth or derive from VNC auth
+      if (rfbInitializer.wasWinAuthUsed()) {
+        m_permissions = rfbInitializer.getClientPermissions();
+        m_viewOnly = m_permissions.isViewOnly();
+        m_log->info(_T("Windows auth permissions = 0x%08X, viewOnly = %d"),
+                    m_permissions.getFlags(), (int)m_viewOnly);
+      } else {
+        // Derive permissions from VNC auth result
+        m_permissions = ClientPermissions::fromViewOnlyFlag(m_viewOnlyAuth);
+      }
+
       // Let RfbClientManager handle new authenticated connection.
       m_desktop = m_extAuthListener->onClientAuth(this);
 
@@ -237,16 +248,20 @@ void RfbClient::execute()
     // ClientInputHandler initialization
     m_clientInputHandler = new ClientInputHandler(&codeRegtor, this,
                                                   m_viewOnly);
+    m_clientInputHandler->setPermissions(m_permissions);
     m_log->debug(_T("ClientInputHandler has been created"));
     // ClipboardExchange initialization
     m_clipboardExchange = new ClipboardExchange(&codeRegtor, m_desktop, &output,
                                                 m_viewOnly, m_log);
+    m_clipboardExchange->setPermissions(m_permissions);
     m_log->debug(_T("ClipboardExchange has been created"));
 
     // FileTransfers initialization
-    if (config->isFileTransfersEnabled() &&
-        rfbInitializer.getTightEnabledFlag()) {
-      fileTransfer = new FileTransferRequestHandler(&codeRegtor, &output, m_desktop, m_log, !m_viewOnly);
+    bool ftAllowed = config->isFileTransfersEnabled()
+                     && rfbInitializer.getTightEnabledFlag()
+                     && m_permissions.canFileTransfer();
+    if (ftAllowed && !m_viewOnly) {
+      fileTransfer = new FileTransferRequestHandler(&codeRegtor, &output, m_desktop, m_log, !m_viewOnly, m_permissions);
       m_log->debug(_T("File transfer has been created"));
     } else {
       m_log->info(_T("File transfer is not allowed"));
