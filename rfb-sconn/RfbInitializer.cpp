@@ -50,9 +50,7 @@ RfbInitializer::RfbInitializer(Channel *stream,
   m_authAllowed(authAllowed),
   m_viewOnlyAuth(false),
   m_winAuthUsed(false),
-  m_clientPermissions(ClientPermissions::PERM_FULL_CONTROL),
-  m_hasPortRules(false),
-  m_portDefaultPerms(ClientPermissions::PERM_FULL_CONTROL)
+  m_clientPermissions(ClientPermissions::PERM_FULL_CONTROL)
 {
   m_output = new DataOutputStream(stream);
   m_input = new DataInputStream(stream);
@@ -265,8 +263,6 @@ void RfbInitializer::doWinAuth()
   if (passwordLen > 256) {
     throw AuthException(_T("Invalid password length in Windows auth"));
   }
-  std::vector<TCHAR> passwordBuf(passwordLen + 1, 0);
-  // Read as bytes first
   std::vector<char> passAnsi(passwordLen + 1, 0);
   m_input->readFully(&passAnsi[0], passwordLen);
   passAnsi[passwordLen] = 0;
@@ -306,18 +302,10 @@ void RfbInitializer::doWinAuth()
   std::vector<TCHAR> mutablePass(passLen);
   _tcscpy_s(&mutablePass[0], passLen, passStr.getString());
 
-  // Perform Windows authentication
-  // Use per-port rules if configured, otherwise fall back to global config
+  // Perform Windows authentication using global config
   ServerConfig *srvConf = Configurator::getInstance()->getServerConfig();
-  std::vector<GroupPermissionRule> rules;
-  UINT32 defaultPerms;
-  if (m_hasPortRules) {
-    rules = m_portGroupRules;
-    defaultPerms = m_portDefaultPerms;
-  } else {
-    rules = srvConf->getGroupRules();
-    defaultPerms = srvConf->getDefaultWinAuthPermissions();
-  }
+  std::vector<GroupPermissionRule> rules = srvConf->getGroupRules();
+  UINT32 defaultPerms = srvConf->getDefaultWinAuthPermissions();
 
   WinAuthenticator authenticator(NULL); // No log in initializer context
   WinAuthResult result = authenticator.performAuth(
@@ -327,8 +315,12 @@ void RfbInitializer::doWinAuth()
     rules,
     defaultPerms);
 
-  // Clear password from ANSI buffer too
+  // Securely clear all password buffers
   SecureZeroMemory(&passAnsi[0], passAnsi.size());
+  if (passStr.getLength() > 0) {
+    SecureZeroMemory((void *)passStr.getString(),
+                     passStr.getLength() * sizeof(TCHAR));
+  }
 
   if (!result.success) {
     // Notify about failed auth attempt
@@ -480,12 +472,4 @@ void RfbInitializer::checkForBan()
   if (m_extAuthListener->onCheckForBan(m_client)) {
     throw AuthException(_T("Your connection has been rejected"));
   }
-}
-
-void RfbInitializer::setPortGroupRules(
-  const std::vector<GroupPermissionRule> &rules, UINT32 defaultPerms)
-{
-  m_portGroupRules = rules;
-  m_portDefaultPerms = defaultPerms;
-  m_hasPortRules = true;
 }

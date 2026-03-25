@@ -75,6 +75,10 @@ public:
   void closeToken();
 
 private:
+  // Check if the authenticated token belongs to the Guest account (RID 501).
+  // Windows maps non-existent users to Guest when Guest is enabled.
+  bool isGuestToken();
+
   HANDLE m_token;        // Logon token from LogonUser
   LogWriter *m_log;
 };

@@ -27,9 +27,6 @@
 
 #include "util/StringStorage.h"
 #include "PortMappingRect.h"
-#include "GroupPermissionRule.h"
-#include "ClientPermissions.h"
-#include <vector>
 
 class PortMapping
 {
@@ -52,14 +49,6 @@ public:
   void setDevicePath(const TCHAR *path);
   const StringStorage &getDevicePath() const;
 
-  // Per-port Windows auth group rules
-  void setGroupRules(const std::vector<GroupPermissionRule> &rules);
-  const std::vector<GroupPermissionRule> &getGroupRules() const;
-
-  // Per-port default permission for unmatched groups
-  void setDefaultPermissions(UINT32 perms);
-  UINT32 getDefaultPermissions() const;
-
   void toString(StringStorage *string) const;
 
 public:
@@ -69,8 +58,6 @@ protected:
   int m_port;
   PortMappingRect m_rect;
   StringStorage m_devicePath;
-  std::vector<GroupPermissionRule> m_groupRules;
-  UINT32 m_defaultPermissions;
 };
 
 #endif

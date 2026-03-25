@@ -24,7 +24,6 @@
 
 #include "ExtraRfbServers.h"
 #include "server-config-lib/Configurator.h"
-#include "server-config-lib/GroupPermissionRule.h"
 
 ExtraRfbServers::Conf::Conf()
 : acceptConnections(false),
@@ -133,11 +132,6 @@ bool ExtraRfbServers::startUp(bool asService, RfbClientManager *mgr)
 
       try {
         RfbServer *s = new RfbServer(bindHost, port, mgr, asService, m_log, &rect);
-        // Apply per-port auth rules if configured
-        const std::vector<GroupPermissionRule> &portRules = pm.getGroupRules();
-        if (!portRules.empty()) {
-          s->setPortAuthRules(portRules, pm.getDefaultPermissions());
-        }
         m_servers.push_back(s);
         m_log->message(_T("Started extra RFB server at port %d"), port);
       } catch (Exception &ex) {

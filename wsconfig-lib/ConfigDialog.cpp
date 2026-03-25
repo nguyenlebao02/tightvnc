@@ -140,43 +140,49 @@ BOOL ConfigDialog::onInitDialog()
 
   m_tabControl.addTab(NULL, _T("Temp"));
 
-  m_serverConfigDialog.setParent(&m_ctrlThis);
-  m_serverConfigDialog.setParentDialog(this);
-  m_serverConfigDialog.create();
-  moveDialogToTabControl(&m_serverConfigDialog);
+  m_connectionDialog.setParent(&m_ctrlThis);
+  m_connectionDialog.setParentDialog(this);
+  m_connectionDialog.create();
+  moveDialogToTabControl(&m_connectionDialog);
 
-  m_portMappingDialog.setParent(&m_ctrlThis);
-  m_portMappingDialog.setParentDialog(this);
-  m_portMappingDialog.create();
-  moveDialogToTabControl(&m_portMappingDialog);
-  m_portMappingDialog.hide();
-
-  m_administrationConfigDialog.setParent(&m_ctrlThis);
-  m_administrationConfigDialog.setParentDialog(this);
-  m_administrationConfigDialog.create();
-  moveDialogToTabControl(&m_administrationConfigDialog);
+  m_authenticationDialog.setParent(&m_ctrlThis);
+  m_authenticationDialog.setParentDialog(this);
+  m_authenticationDialog.create();
+  moveDialogToTabControl(&m_authenticationDialog);
+  m_authenticationDialog.hide();
 
   m_ipAccessControlDialog.setParent(&m_ctrlThis);
   m_ipAccessControlDialog.setParentDialog(this);
   m_ipAccessControlDialog.create();
   moveDialogToTabControl(&m_ipAccessControlDialog);
 
-  m_videoRegionsConfigDialog.setParent(&m_ctrlThis);
-  m_videoRegionsConfigDialog.setParentDialog(this);
-  m_videoRegionsConfigDialog.create();
-  moveDialogToTabControl(&m_videoRegionsConfigDialog);
+  m_displayInputDialog.setParent(&m_ctrlThis);
+  m_displayInputDialog.setParentDialog(this);
+  m_displayInputDialog.create();
+  moveDialogToTabControl(&m_displayInputDialog);
 
-  m_winAuthConfigDialog.setParent(&m_ctrlThis);
-  m_winAuthConfigDialog.setParentDialog(this);
-  m_winAuthConfigDialog.create();
-  moveDialogToTabControl(&m_winAuthConfigDialog);
+  m_permissionsDialog.setParent(&m_ctrlThis);
+  m_permissionsDialog.setParentDialog(this);
+  m_permissionsDialog.create();
+  moveDialogToTabControl(&m_permissionsDialog);
 
-  m_tabControl.addTab(&m_serverConfigDialog, StringTable::getString(IDS_SERVER_TAB_CAPTION));
-  m_tabControl.addTab(&m_portMappingDialog, StringTable::getString(IDS_EXTRA_PORTS_TAB_CAPTION));
+  m_sessionDialog.setParent(&m_ctrlThis);
+  m_sessionDialog.setParentDialog(this);
+  m_sessionDialog.create();
+  moveDialogToTabControl(&m_sessionDialog);
+
+  m_loggingDialog.setParent(&m_ctrlThis);
+  m_loggingDialog.setParentDialog(this);
+  m_loggingDialog.create();
+  moveDialogToTabControl(&m_loggingDialog);
+
+  m_tabControl.addTab(&m_connectionDialog, _T("Connection"));
+  m_tabControl.addTab(&m_authenticationDialog, _T("Authentication"));
   m_tabControl.addTab(&m_ipAccessControlDialog, StringTable::getString(IDS_ACCESS_CONTROL_TAB_CAPTION));
-  m_tabControl.addTab(&m_videoRegionsConfigDialog, StringTable::getString(IDS_VIDEO_WINDOWS_TAB_CAPTION));
-  m_tabControl.addTab(&m_administrationConfigDialog, StringTable::getString(IDS_ADMINISTRATION_TAB_CAPTION));
-  m_tabControl.addTab(&m_winAuthConfigDialog, _T("Windows Auth"));
+  m_tabControl.addTab(&m_displayInputDialog, _T("Display && Input"));
+  m_tabControl.addTab(&m_permissionsDialog, _T("Permissions"));
+  m_tabControl.addTab(&m_sessionDialog, _T("Session"));
+  m_tabControl.addTab(&m_loggingDialog, _T("Logging"));
 
   m_tabControl.removeTab(0);
 
@@ -216,11 +222,13 @@ void ConfigDialog::onApplyButtonClick()
 
   // Fill global server configuration with values from gui.
   if (canApply) {
-    m_administrationConfigDialog.apply();
-    m_serverConfigDialog.apply();
+    m_connectionDialog.apply();
+    m_authenticationDialog.apply();
     m_ipAccessControlDialog.apply();
-    m_videoRegionsConfigDialog.apply();
-    m_winAuthConfigDialog.apply();
+    m_displayInputDialog.apply();
+    m_permissionsDialog.apply();
+    m_sessionDialog.apply();
+    m_loggingDialog.apply();
   } else {
     return ;
   }
@@ -231,7 +239,8 @@ void ConfigDialog::onApplyButtonClick()
     m_reloadConfigCommand->execute();
 
     if (m_reloadConfigCommand->executionResultOk()) {
-      m_administrationConfigDialog.updateUI();
+      m_sessionDialog.updateUI();
+      m_loggingDialog.updateUI();
       m_ipAccessControlDialog.updateUI();
       m_ctrlApplyButton.setEnabled(false);
     }
@@ -290,33 +299,34 @@ void ConfigDialog::moveDialogToTabControl(BaseDialog *dialog)
 
 bool ConfigDialog::validateInput()
 {
-  if (!m_serverConfigDialog.validateInput()) {
-    m_tabControl.showTab(&m_serverConfigDialog);
+  if (!m_connectionDialog.validateInput()) {
+    m_tabControl.showTab(&m_connectionDialog);
+    return false;
+  }
+  if (!m_authenticationDialog.validateInput()) {
+    m_tabControl.showTab(&m_authenticationDialog);
     return false;
   }
   if (!m_ipAccessControlDialog.validateInput()) {
     m_tabControl.showTab(&m_ipAccessControlDialog);
     return false;
   }
-  if (!m_winAuthConfigDialog.validateInput()) {
-    m_tabControl.showTab(&m_winAuthConfigDialog);
+  if (!m_displayInputDialog.validateInput()) {
+    m_tabControl.showTab(&m_displayInputDialog);
     return false;
   }
-#ifdef USE_EXTRA_TABS
-  if (!m_videoRegionsConfigDialog.validateInput()) {
-    m_tabControl.showTab(&m_videoRegionsConfigDialog);
+  if (!m_permissionsDialog.validateInput()) {
+    m_tabControl.showTab(&m_permissionsDialog);
     return false;
   }
-  if (!m_administrationConfigDialog.validateInput()) {
-    m_tabControl.showTab(&m_administrationConfigDialog);
+  if (!m_sessionDialog.validateInput()) {
+    m_tabControl.showTab(&m_sessionDialog);
     return false;
   }
-#else
-  if (!m_administrationConfigDialog.validateInput()) {
-    m_tabControl.showTab(&m_administrationConfigDialog);
+  if (!m_loggingDialog.validateInput()) {
+    m_tabControl.showTab(&m_loggingDialog);
     return false;
   }
-#endif
   return true;
 }
 

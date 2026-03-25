@@ -277,12 +277,6 @@ public:
   std::vector<GroupPermissionRule> getGroupRules();
   void setGroupRules(const std::vector<GroupPermissionRule> &rules);
 
-  // Resolve permissions for a list of Windows group names.
-  // Returns the permissions from the highest-priority matching rule,
-  // or the default permissions if no rule matches.
-  ClientPermissions resolveGroupPermissions(
-    const std::vector<StringStorage> &userGroups);
-
   //
   // Main port mapping (unified port config)
   //

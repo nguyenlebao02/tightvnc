@@ -32,8 +32,6 @@
 #include "region/Dimension.h"
 #include "rfb/PixelFormat.h"
 #include "server-config-lib/ClientPermissions.h"
-#include "server-config-lib/GroupPermissionRule.h"
-#include <vector>
 // External listeners
 #include "ClientAuthListener.h"
 
@@ -63,11 +61,6 @@ public:
   // Only valid after authPhase() if Windows auth was used.
   ClientPermissions getClientPermissions() const { return m_clientPermissions; }
   bool wasWinAuthUsed() const { return m_winAuthUsed; }
-
-  // Per-port auth override: if set, use these rules instead of global config
-  void setPortGroupRules(const std::vector<GroupPermissionRule> &rules,
-                         UINT32 defaultPerms);
-  bool hasPortGroupRules() const { return m_hasPortRules; }
 
 protected:
   void initVersion();
@@ -111,11 +104,6 @@ protected:
 
   ClientAuthListener *m_extAuthListener;
   RfbClient *m_client;
-
-  // Per-port auth override
-  bool m_hasPortRules;
-  std::vector<GroupPermissionRule> m_portGroupRules;
-  UINT32 m_portDefaultPerms;
 };
 
 #endif // __RFBINITIALIZER_H__

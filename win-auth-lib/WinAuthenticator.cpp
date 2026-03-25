@@ -70,6 +70,17 @@ bool WinAuthenticator::authenticate(const TCHAR *username,
     return false;
   }
 
+  // Reject Guest account logons — Windows maps non-existent users to Guest
+  // when Guest is enabled, which is a security risk for VNC.
+  if (isGuestToken()) {
+    if (m_log != NULL) {
+      m_log->warning(_T("WinAuth: Rejected Guest logon for '%s\\%s'"),
+                     logonDomain, username);
+    }
+    closeToken();
+    return false;
+  }
+
   if (m_log != NULL) {
     m_log->message(_T("WinAuth: LogonUser succeeded for user '%s\\%s'"),
                    logonDomain, username);
@@ -238,4 +249,34 @@ void WinAuthenticator::closeToken()
     CloseHandle(m_token);
     m_token = NULL;
   }
+}
+
+bool WinAuthenticator::isGuestToken()
+{
+  if (m_token == NULL) {
+    return false;
+  }
+
+  // Get the token user SID
+  DWORD infoSize = 0;
+  GetTokenInformation(m_token, TokenUser, NULL, 0, &infoSize);
+  if (infoSize == 0) {
+    return false;
+  }
+
+  std::vector<BYTE> buffer(infoSize);
+  TOKEN_USER *tokenUser = (TOKEN_USER *)&buffer[0];
+  if (!GetTokenInformation(m_token, TokenUser, tokenUser, infoSize, &infoSize)) {
+    return false;
+  }
+
+  // Check if the SID matches the well-known Guest RID (501).
+  // Guest SID format: S-1-5-<domain>-501
+  PSID sid = tokenUser->User.Sid;
+  PUCHAR subAuthCount = GetSidSubAuthorityCount(sid);
+  if (subAuthCount == NULL || *subAuthCount < 1) {
+    return false;
+  }
+  DWORD lastSubAuth = *GetSidSubAuthority(sid, *subAuthCount - 1);
+  return (lastSubAuth == DOMAIN_USER_RID_GUEST); // 501
 }

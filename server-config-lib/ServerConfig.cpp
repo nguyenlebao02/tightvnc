@@ -835,30 +835,6 @@ void ServerConfig::setGroupRules(const std::vector<GroupPermissionRule> &rules)
   m_groupRules = rules;
 }
 
-ClientPermissions ServerConfig::resolveGroupPermissions(
-  const std::vector<StringStorage> &userGroups)
-{
-  AutoLock lock(&m_objectCS);
-
-  // Sort rules by priority descending (highest first)
-  std::vector<GroupPermissionRule> sortedRules = m_groupRules;
-  std::sort(sortedRules.begin(), sortedRules.end(),
-            GroupPermissionRule::compareByPriority);
-
-  // Find the first matching rule (highest priority wins)
-  for (size_t r = 0; r < sortedRules.size(); r++) {
-    const GroupPermissionRule &rule = sortedRules[r];
-    for (size_t g = 0; g < userGroups.size(); g++) {
-      if (userGroups[g].isEqualTo(rule.getGroupName().getString())) {
-        return ClientPermissions(rule.getPermissionFlags());
-      }
-    }
-  }
-
-  // No matching rule found, return default permissions
-  return ClientPermissions(m_defaultWinAuthPermissions);
-}
-
 PortMapping ServerConfig::getMainPortMapping()
 {
   AutoLock lock(&m_objectCS);

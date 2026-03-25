@@ -26,7 +26,6 @@
 #include "EditPortMappingDialog.h"
 #include "ConfigDialog.h"
 #include "tvnserver/resource.h"
-#include "server-config-lib/ClientPermissions.h"
 
 // Build a human-readable display string for a port mapping entry.
 static void buildDisplayString(const PortMapping *pm, StringStorage *out)
@@ -36,18 +35,10 @@ static void buildDisplayString(const PortMapping *pm, StringStorage *out)
 
   const StringStorage &devPath = pm->getDevicePath();
   bool hasDevice = (devPath.getLength() > 0);
-  bool hasAuth = !pm->getGroupRules().empty() ||
-                 pm->getDefaultPermissions() != ClientPermissions::PERM_FULL_CONTROL;
 
-  if (hasDevice && hasAuth) {
-    out->format(_T(":%d  %s  [%s]  [Auth]"),
-                pm->getPort(), rectStr.getString(), devPath.getString());
-  } else if (hasDevice) {
+  if (hasDevice) {
     out->format(_T(":%d  %s  [%s]"),
                 pm->getPort(), rectStr.getString(), devPath.getString());
-  } else if (hasAuth) {
-    out->format(_T(":%d  %s  [Auth]"),
-                pm->getPort(), rectStr.getString());
   } else {
     out->format(_T(":%d  %s"),
                 pm->getPort(), rectStr.getString());

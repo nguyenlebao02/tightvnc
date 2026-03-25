@@ -35,12 +35,13 @@
 
 #include "server-config-lib/Configurator.h"
 
-#include "ServerConfigDialog.h"
-#include "AdministrationConfigDialog.h"
-#include "PortMappingDialog.h"
+#include "ConnectionConfigDialog.h"
+#include "AuthenticationConfigDialog.h"
 #include "IpAccessControlDialog.h"
-#include "VideoRegionsConfigDialog.h"
-#include "WinAuthConfigDialog.h"
+#include "DisplayInputConfigDialog.h"
+#include "PermissionsConfigDialog.h"
+#include "SessionConfigDialog.h"
+#include "LoggingConfigDialog.h"
 
 #include "tvncontrol-app/ControlCommand.h"
 
@@ -86,12 +87,13 @@ protected:
   // Settings
   Configurator *m_config;
   // Dialogs for tab control
-  ServerConfigDialog m_serverConfigDialog;
-  PortMappingDialog m_portMappingDialog;
-  AdministrationConfigDialog m_administrationConfigDialog;
+  ConnectionConfigDialog m_connectionDialog;
+  AuthenticationConfigDialog m_authenticationDialog;
   IpAccessControlDialog m_ipAccessControlDialog;
-  VideoRegionsConfigDialog m_videoRegionsConfigDialog;
-  WinAuthConfigDialog m_winAuthConfigDialog;
+  DisplayInputConfigDialog m_displayInputDialog;
+  PermissionsConfigDialog m_permissionsDialog;
+  SessionConfigDialog m_sessionDialog;
+  LoggingConfigDialog m_loggingDialog;
   // Other members
   bool m_isConfiguringService;
 

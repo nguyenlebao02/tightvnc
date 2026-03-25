@@ -392,6 +392,12 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="AdministrationConfigDialog.cpp" />
+    <ClCompile Include="AuthenticationConfigDialog.cpp" />
+    <ClCompile Include="DisplayInputConfigDialog.cpp" />
+    <ClCompile Include="PermissionsConfigDialog.cpp" />
+    <ClCompile Include="ConnectionConfigDialog.cpp" />
+    <ClCompile Include="LoggingConfigDialog.cpp" />
+    <ClCompile Include="SessionConfigDialog.cpp" />
     <ClCompile Include="ChangePasswordDialog.cpp" />
     <ClCompile Include="CommonInputValidation.cpp" />
     <ClCompile Include="ConfigDialog.cpp" />
@@ -408,6 +414,12 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="AdministrationConfigDialog.h" />
+    <ClInclude Include="AuthenticationConfigDialog.h" />
+    <ClInclude Include="DisplayInputConfigDialog.h" />
+    <ClInclude Include="PermissionsConfigDialog.h" />
+    <ClInclude Include="ConnectionConfigDialog.h" />
+    <ClInclude Include="LoggingConfigDialog.h" />
+    <ClInclude Include="SessionConfigDialog.h" />
     <ClInclude Include="ChangePasswordDialog.h" />
     <ClInclude Include="CommonInputValidation.h" />
     <ClInclude Include="ConfigDialog.h" />

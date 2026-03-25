@@ -67,17 +67,11 @@ bool GroupPermissionRule::parse(const TCHAR *str, GroupPermissionRule *rule)
     return false;
   }
 
-  // Find second-to-last colon
-  StringStorage temp;
-  temp.setString(str);
-  size_t len = temp.getLength();
-
   // Parse from the end: find priority after last colon
   const TCHAR *priorityStr = lastColon + 1;
 
-  // Find flags colon (second-to-last)
+  // Find second-to-last colon (flags separator)
   size_t lastColonPos = lastColon - str;
-  const TCHAR *beforeLastColon = str;
   const TCHAR *flagsColon = NULL;
 
   for (size_t i = lastColonPos; i > 0; i--) {
@@ -105,10 +99,7 @@ bool GroupPermissionRule::parse(const TCHAR *str, GroupPermissionRule *rule)
   }
 
   if (rule != NULL) {
-    // Parse group name
-    StringStorage groupName;
-    groupName.setString(str);
-    // Truncate to nameLen characters
+    // Parse group name — extract nameLen characters from start of str
     TCHAR *buf = new TCHAR[nameLen + 1];
     _tcsncpy_s(buf, nameLen + 1, str, nameLen);
     buf[nameLen] = 0;
