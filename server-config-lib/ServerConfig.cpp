@@ -878,3 +878,58 @@ void ServerConfig::setAllPortMappings(const std::vector<PortMapping> &mappings)
     m_portMappings.pushBack(mappings[i]);
   }
 }
+
+// ---- Unified per-port configuration ----
+
+std::vector<PortConfig> ServerConfig::getAllPortConfigs()
+{
+  AutoLock lock(&m_objectCS);
+  return m_portConfigs;
+}
+
+void ServerConfig::setAllPortConfigs(const std::vector<PortConfig> &configs)
+{
+  AutoLock lock(&m_objectCS);
+  m_portConfigs = configs;
+
+  // Sync legacy fields from port configs for backward compat
+  if (!configs.empty()) {
+    m_rfbPort = configs[0].getPort();
+    m_mainPortMapping.setPort(configs[0].getPort());
+    m_mainPortMapping.setRect(configs[0].getRect());
+    m_mainPortMapping.setDevicePath(configs[0].getDevicePath().getString());
+  }
+  m_portMappings.removeAll();
+  for (size_t i = 1; i < configs.size(); i++) {
+    m_portMappings.pushBack(configs[i].toPortMapping());
+  }
+}
+
+PortConfig ServerConfig::getPortConfigByPort(int port)
+{
+  AutoLock lock(&m_objectCS);
+  for (size_t i = 0; i < m_portConfigs.size(); i++) {
+    if (m_portConfigs[i].getPort() == port) {
+      return m_portConfigs[i];
+    }
+  }
+  // Return default if not found
+  return PortConfig();
+}
+
+bool ServerConfig::hasPortConfig(int port)
+{
+  AutoLock lock(&m_objectCS);
+  for (size_t i = 0; i < m_portConfigs.size(); i++) {
+    if (m_portConfigs[i].getPort() == port) {
+      return true;
+    }
+  }
+  return false;
+}
+
+size_t ServerConfig::getPortConfigCount()
+{
+  AutoLock lock(&m_objectCS);
+  return m_portConfigs.size();
+}

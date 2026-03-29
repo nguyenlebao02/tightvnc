@@ -29,13 +29,17 @@ RfbServer::RfbServer(const TCHAR *bindHost, unsigned short bindPort,
                      RfbClientManager *clientManager,
                      bool lockAddr,
                      LogWriter *log,
-                     const Rect *viewPort)
+                     const Rect *viewPort,
+                     const PortConfig *portConfig)
 : TcpServer(bindHost, bindPort, false, lockAddr),
   m_clientManager(clientManager),
   m_log(log)
 {
   if (viewPort != 0) {
     m_viewPort.setArbitraryRect(viewPort);
+  }
+  if (portConfig != 0) {
+    m_portConfig = *portConfig;
   }
 
   TcpServer::start();
@@ -83,7 +87,7 @@ void RfbServer::onAcceptConnection(SocketIPv4 *socket)
 
     socket->enableNaggleAlgorithm(false);
 
-    m_clientManager->addNewConnection(socket, &m_viewPort, false, false);
+    m_clientManager->addNewConnection(socket, &m_viewPort, false, false, &m_portConfig);
 
   } catch (Exception &ex) {
     m_log->error(_T("Failed to process incoming rfb connection with following reason: \"%s\""), ex.getMessage());

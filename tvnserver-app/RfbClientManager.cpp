@@ -373,7 +373,8 @@ StringStorage RfbClientManager::getBanListString()
 
 void RfbClientManager::addNewConnection(SocketIPv4 *socket,
                                         ViewPortState *constViewPort,
-                                        bool viewOnly, bool isOutgoing)
+                                        bool viewOnly, bool isOutgoing,
+                                        const PortConfig *portConfig)
 {
   AutoLock al(&m_clientListLocker);
 
@@ -401,7 +402,8 @@ void RfbClientManager::addNewConnection(SocketIPv4 *socket,
                                               constViewPort,
                                               &m_dynViewPort,
                                               timeout,
-                                              m_log));
+                                              m_log,
+                                              portConfig));
   m_nextClientId++;
 }
 

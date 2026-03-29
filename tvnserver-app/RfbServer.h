@@ -29,6 +29,7 @@
 #include "thread/Thread.h"
 #include "network/TcpServer.h"
 #include "region/Rect.h"
+#include "server-config-lib/PortConfig.h"
 
 /**
  * TCP Server that accepts connections and pases them to RfbClientManager.
@@ -52,7 +53,8 @@ public:
             RfbClientManager *clientManager,
             bool lockAddr,
             LogWriter *log,
-            const Rect *viewPort = 0)
+            const Rect *viewPort = 0,
+            const PortConfig *portConfig = 0)
             throw(Exception);
   /**
    * Stops listening thread and deletes rfb server.
@@ -77,6 +79,11 @@ protected:
    * View port for server.
    */
   ViewPortState m_viewPort;
+
+  /**
+   * Per-port configuration snapshot (auth, passwords, permissions).
+   */
+  PortConfig m_portConfig;
 
 private:
   LogWriter *m_log;

@@ -28,6 +28,7 @@
 #include <list>
 #include "RfbServer.h"
 #include "server-config-lib/PortMappingContainer.h"
+#include "server-config-lib/PortConfig.h"
 
 class ExtraRfbServers
 {
@@ -35,7 +36,8 @@ class ExtraRfbServers
   {
     bool acceptConnections;
     bool loopbackOnly;
-    PortMappingContainer extraPorts;
+    PortMappingContainer extraPorts;    // Legacy (kept for backward compat)
+    std::vector<PortConfig> portConfigs; // Unified per-port config
 
     Conf();
     Conf(const Conf &other);

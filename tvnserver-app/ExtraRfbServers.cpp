@@ -28,14 +28,16 @@
 ExtraRfbServers::Conf::Conf()
 : acceptConnections(false),
   loopbackOnly(false),
-  extraPorts()
+  extraPorts(),
+  portConfigs()
 {
 }
 
 ExtraRfbServers::Conf::Conf(const Conf &other)
 : acceptConnections(other.acceptConnections),
   loopbackOnly(other.loopbackOnly),
-  extraPorts(other.extraPorts)
+  extraPorts(other.extraPorts),
+  portConfigs(other.portConfigs)
 {
 }
 
@@ -45,14 +47,25 @@ ExtraRfbServers::Conf::operator=(const Conf &other)
   acceptConnections = other.acceptConnections;
   loopbackOnly = other.loopbackOnly;
   extraPorts = other.extraPorts;
+  portConfigs = other.portConfigs;
   return *this;
 }
 
 bool ExtraRfbServers::Conf::equals(const Conf *other)
 {
-  return (acceptConnections == other->acceptConnections &&
-          loopbackOnly == other->loopbackOnly &&
-          extraPorts.equals(&other->extraPorts));
+  if (acceptConnections != other->acceptConnections ||
+      loopbackOnly != other->loopbackOnly) {
+    return false;
+  }
+  // Compare via portConfigs if available, else fall back to extraPorts
+  if (!portConfigs.empty() || !other->portConfigs.empty()) {
+    if (portConfigs.size() != other->portConfigs.size()) return false;
+    for (size_t i = 0; i < portConfigs.size(); i++) {
+      if (!portConfigs[i].isEqualTo(&other->portConfigs[i])) return false;
+    }
+    return true;
+  }
+  return extraPorts.equals(&other->extraPorts);
 }
 
 ExtraRfbServers::ExtraRfbServers(LogWriter *log)
@@ -76,18 +89,21 @@ bool ExtraRfbServers::reload(bool asService, RfbClientManager *mgr)
   Conf newConf;
   getConfiguration(&newConf);
   bool noConfigChanges = newConf.equals(&m_effectiveConf);
-  bool enoughServers = (newConf.extraPorts.count() == m_servers.size());
-  m_log->detail(_T("Same Extra Ports configuration = %d, enough servers = %d"),
+
+  // Determine expected server count from portConfigs or extraPorts
+  size_t expectedCount = newConf.portConfigs.empty()
+    ? newConf.extraPorts.count()
+    : newConf.portConfigs.size();
+  bool enoughServers = (expectedCount == m_servers.size());
+
+  m_log->detail(_T("Same config = %d, enough servers = %d"),
               (int)noConfigChanges, (int)enoughServers);
 
   if (noConfigChanges && enoughServers) {
     return true; // no work needed, no errors encountered
   }
 
-  // Either configuration was actually changed, or our number of actually
-  // running servers does not match the configuration. In either case,
-  // restart the servers.
-  m_log->message(_T("Need to reconfigure extra RFB servers"));
+  m_log->message(_T("Need to reconfigure RFB servers"));
   shutDown();
   return startUp(asService, mgr);
 }
@@ -99,19 +115,19 @@ void ExtraRfbServers::shutDown()
   std::list<RfbServer *>::const_iterator i;
   for (i = m_servers.begin(); i != m_servers.end(); i++) {
     int port = (*i)->getBindPort();
-    m_log->detail(_T("Stopping extra RFB server at port %d"), port);
+    m_log->detail(_T("Stopping RFB server at port %d"), port);
     delete *i;
-    m_log->message(_T("Stopped extra RFB server at port %d"), port);
+    m_log->message(_T("Stopped RFB server at port %d"), port);
   }
   m_servers.clear();
 }
 
 bool ExtraRfbServers::startUp(bool asService, RfbClientManager *mgr)
 {
-  m_log->detail(_T("Requested to start up extra RFB servers"));
+  m_log->detail(_T("Requested to start up RFB servers"));
 
   if (!m_servers.empty()) {
-    m_log->interror(_T("Extra RFB servers active, will have to stop them"));
+    m_log->interror(_T("RFB servers active, will have to stop them"));
     shutDown();
   }
 
@@ -119,48 +135,66 @@ bool ExtraRfbServers::startUp(bool asService, RfbClientManager *mgr)
   getConfiguration(&newConf);
   m_effectiveConf = newConf;
 
-  if (newConf.acceptConnections) {
-    const TCHAR *bindHost =
-      newConf.loopbackOnly ? _T("localhost") : _T("0.0.0.0");
+  if (!newConf.acceptConnections) {
+    return true;
+  }
 
+  const TCHAR *bindHost =
+    newConf.loopbackOnly ? _T("localhost") : _T("0.0.0.0");
+
+  size_t expectedCount = 0;
+
+  // Use portConfigs if available, otherwise fall back to extraPorts
+  if (!newConf.portConfigs.empty()) {
+    expectedCount = newConf.portConfigs.size();
+    for (size_t i = 0; i < newConf.portConfigs.size(); i++) {
+      PortConfig pc = newConf.portConfigs[i];
+      PortMappingRect rect = pc.getRect();
+      int port = pc.getPort();
+
+      m_log->detail(_T("Starting RFB server at port %d"), port);
+      try {
+        RfbServer *s = new RfbServer(bindHost, port, mgr, asService,
+                                     m_log, &rect);
+        m_servers.push_back(s);
+        m_log->message(_T("Started RFB server at port %d"), port);
+      } catch (Exception &ex) {
+        m_log->error(_T("Failed to start RFB server: \"%s\""),
+                     ex.getMessage());
+      }
+    }
+  } else {
+    // Legacy path: use extraPorts
+    expectedCount = newConf.extraPorts.count();
     for (size_t i = 0; i < newConf.extraPorts.count(); i++) {
       PortMapping pm = *newConf.extraPorts.at(i);
       PortMappingRect rect = pm.getRect();
       int port = pm.getPort();
 
       m_log->detail(_T("Starting extra RFB server at port %d"), port);
-
       try {
-        RfbServer *s = new RfbServer(bindHost, port, mgr, asService, m_log, &rect);
+        RfbServer *s = new RfbServer(bindHost, port, mgr, asService,
+                                     m_log, &rect);
         m_servers.push_back(s);
         m_log->message(_T("Started extra RFB server at port %d"), port);
       } catch (Exception &ex) {
         m_log->error(_T("Failed to start extra RFB server: \"%s\""),
-                   ex.getMessage());
+                     ex.getMessage());
       }
     }
   }
 
-  // If the number of requested port mappings equals to the number of
-  // successfully started servers, then everything went fine, return true.
-  return newConf.extraPorts.count() == m_servers.size();
+  return expectedCount == m_servers.size();
 }
 
 void ExtraRfbServers::getConfiguration(Conf *out)
 {
-  // FIXME: Create a sort of configuration accessor with auto-locking, and
-  //        do not allow to access the configuration directly, so we would
-  //        have to write something like this:
-  //        {
-  //          ConfigAccessor ca;                         // lock
-  //          ServerConfig *cfg = ca.getServerConfig();  // get access
-  //          someSetting = cfg.getSomeSetting();        // use
-  //        }                                            // auto-unlock
-  //
   ServerConfig *config = Configurator::getInstance()->getServerConfig();
   AutoLock l(config);
 
   out->acceptConnections = config->isAcceptingRfbConnections();
   out->loopbackOnly = config->isOnlyLoopbackConnectionsAllowed();
+  out->portConfigs = config->getAllPortConfigs();
+  // Also populate legacy field for backward compat
   out->extraPorts = *config->getPortMappingContainer();
 }

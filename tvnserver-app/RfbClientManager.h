@@ -45,6 +45,7 @@
 #include "rfb-sconn/ClientAuthListener.h"
 #include "tvncontrol-app/RfbClientInfo.h"
 #include "NewConnectionEvents.h"
+#include "server-config-lib/PortConfig.h"
 
 typedef std::list<RfbClient *> ClientList;
 typedef std::list<RfbClient *>::iterator ClientListIter;
@@ -92,7 +93,8 @@ public:
 
   // FIXME: Place comment for this method here.
   void addNewConnection(SocketIPv4 *socket, ViewPortState *constViewPort,
-                        bool viewOnly, bool isOutgoing);
+                        bool viewOnly, bool isOutgoing,
+                        const PortConfig *portConfig = 0);
 
   // returns list of bans.
   BanList getBanList() { AutoLock al(&m_banListMutex); return m_banList; };

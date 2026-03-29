@@ -41,7 +41,8 @@
 
 RfbInitializer::RfbInitializer(Channel *stream,
                                ClientAuthListener *extAuthListener,
-                               RfbClient *client, bool authAllowed)
+                               RfbClient *client, bool authAllowed,
+                               const PortConfig *portConfig)
 : m_shared(false),
   m_tightEnabled(false),
   m_minorVerNum(0),
@@ -50,7 +51,8 @@ RfbInitializer::RfbInitializer(Channel *stream,
   m_authAllowed(authAllowed),
   m_viewOnlyAuth(false),
   m_winAuthUsed(false),
-  m_clientPermissions(ClientPermissions::PERM_FULL_CONTROL)
+  m_clientPermissions(ClientPermissions::PERM_FULL_CONTROL),
+  m_portConfig(portConfig ? *portConfig : PortConfig())
 {
   m_output = new DataOutputStream(stream);
   m_input = new DataInputStream(stream);
@@ -134,18 +136,17 @@ void RfbInitializer::doTightAuth()
 {
   // Negotiate tunneling.
   m_output->writeUInt32(0);
-  // Negotiate authentication.
-  ServerConfig *srvConf = Configurator::getInstance()->getServerConfig();
-  ServerConfig::AuthMode authMode = srvConf->getAuthMode();
+  // Negotiate authentication using per-port config.
+  int authMode = m_portConfig.getAuthMode();
 
-  if (srvConf->isUsingAuthentication() && m_authAllowed) {
+  if (m_portConfig.isUsingAuthentication() && m_authAllowed) {
     CapContainer authInfo;
 
-    // Offer auth types based on configured auth mode
+    // Offer auth types based on per-port auth mode
     // Only add VNC cap if a password is actually set
     if ((authMode == ServerConfig::AUTH_VNC_ONLY ||
          authMode == ServerConfig::AUTH_BOTH) &&
-        (srvConf->hasPrimaryPassword() || srvConf->hasReadOnlyPassword())) {
+        (m_portConfig.hasPrimaryPassword() || m_portConfig.hasReadOnlyPassword())) {
       authInfo.addCap(AuthDefs::VNC, VendorDefs::STANDARD, AuthDefs::SIG_VNC);
     }
     if (authMode == ServerConfig::AUTH_WINDOWS_ONLY ||
@@ -237,10 +238,9 @@ void RfbInitializer::doVncAuth()
   // Checking for a ban after auth.
   checkForBan();
 
-  // Comparing the challenge with the response.
-  ServerConfig *srvConf = Configurator::getInstance()->getServerConfig();
-  bool hasPrim = srvConf->hasPrimaryPassword();
-  bool hasRdly = srvConf->hasReadOnlyPassword();
+  // Comparing the challenge with the response using per-port passwords.
+  bool hasPrim = m_portConfig.hasPrimaryPassword();
+  bool hasRdly = m_portConfig.hasReadOnlyPassword();
 
   if (!hasPrim && !hasRdly) {
     throw AuthException(_T("Server is not configured properly"));
@@ -248,7 +248,7 @@ void RfbInitializer::doVncAuth()
 
   if (hasPrim) {
     UINT8 crypPrimPass[8];
-    srvConf->getPrimaryPassword(crypPrimPass);
+    m_portConfig.getPrimaryPassword(crypPrimPass);
     VncPassCrypt passCrypt;
     passCrypt.updatePlain(crypPrimPass);
     if (passCrypt.challengeAndResponseIsValid(challenge, response)) {
@@ -257,7 +257,7 @@ void RfbInitializer::doVncAuth()
   }
   if (hasRdly) {
     UINT8 crypReadOnlyPass[8];
-    srvConf->getReadOnlyPassword(crypReadOnlyPass);
+    m_portConfig.getReadOnlyPassword(crypReadOnlyPass);
     VncPassCrypt passCrypt;
     passCrypt.updatePlain(crypReadOnlyPass);
     if (passCrypt.challengeAndResponseIsValid(challenge, response)) {
@@ -340,10 +340,9 @@ void RfbInitializer::doWinAuth()
   std::vector<TCHAR> mutablePass(passLen);
   _tcscpy_s(&mutablePass[0], passLen, passStr.getString());
 
-  // Perform Windows authentication using global config
-  ServerConfig *srvConf = Configurator::getInstance()->getServerConfig();
-  std::vector<GroupPermissionRule> rules = srvConf->getGroupRules();
-  UINT32 defaultPerms = srvConf->getDefaultWinAuthPermissions();
+  // Perform Windows authentication using per-port config
+  std::vector<GroupPermissionRule> rules = m_portConfig.getGroupRules();
+  UINT32 defaultPerms = m_portConfig.getDefaultWinAuthPermissions();
 
   WinAuthenticator authenticator(NULL); // No log in initializer context
   WinAuthResult result = authenticator.performAuth(
@@ -384,13 +383,12 @@ void RfbInitializer::doWinAuth()
 void RfbInitializer::initAuthenticate()
 {
   try {
-    // Determine effective security type from the configuration.
+    // Determine effective security type from per-port configuration.
     UINT32 primSecType = SecurityDefs::VNC;
-    ServerConfig *srvConf = Configurator::getInstance()->getServerConfig();
-    ServerConfig::AuthMode authMode = srvConf->getAuthMode();
+    int authMode = m_portConfig.getAuthMode();
     if (!m_authAllowed) {
       primSecType = SecurityDefs::NONE;
-    } else if (!srvConf->isUsingAuthentication()) {
+    } else if (!m_portConfig.isUsingAuthentication()) {
       // VNC password auth disabled — check if Windows auth is configured
       if (authMode == ServerConfig::AUTH_WINDOWS_ONLY ||
           authMode == ServerConfig::AUTH_BOTH) {

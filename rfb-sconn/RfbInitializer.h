@@ -32,6 +32,7 @@
 #include "region/Dimension.h"
 #include "rfb/PixelFormat.h"
 #include "server-config-lib/ClientPermissions.h"
+#include "server-config-lib/PortConfig.h"
 // External listeners
 #include "ClientAuthListener.h"
 
@@ -40,7 +41,8 @@ class RfbInitializer
 public:
   RfbInitializer(Channel *stream,
                  ClientAuthListener *extAuthListener,
-                 RfbClient *client, bool authAllowed);
+                 RfbClient *client, bool authAllowed,
+                 const PortConfig *portConfig = 0);
   virtual ~RfbInitializer();
 
   void authPhase();
@@ -104,6 +106,7 @@ protected:
 
   ClientAuthListener *m_extAuthListener;
   RfbClient *m_client;
+  PortConfig m_portConfig;
 };
 
 #endif // __RFBINITIALIZER_H__

@@ -42,6 +42,7 @@
 #include "tvnserver-app/NewConnectionEvents.h"
 #include "util/DemandTimer.h"
 #include "server-config-lib/ClientPermissions.h"
+#include "server-config-lib/PortConfig.h"
 
 class ClientAuthListener;
 
@@ -66,7 +67,8 @@ public:
             const ViewPortState *constViewPort,
             const ViewPortState *dynViewPort,
             int idleTimeout,
-            LogWriter *log);
+            LogWriter *log,
+            const PortConfig *portConfig = 0);
   virtual ~RfbClient();
 
   void disconnect();
@@ -148,6 +150,7 @@ private:
   bool m_viewOnlyAuth;
   bool m_shared;
   ClientPermissions m_permissions;
+  PortConfig m_portConfig;
 
   LogWriter *m_log;
 

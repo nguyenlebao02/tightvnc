@@ -100,6 +100,20 @@ private:
   bool savePortConfig(SettingsManager *sm);
   bool loadPortConfig(SettingsManager *sm, ServerConfig *config);
 
+  // Per-port config helpers
+  void savePortPassword(SettingsManager *sm, const TCHAR *key,
+                        const PortConfig &pc, bool primary);
+  void loadPortPassword(SettingsManager *sm, const TCHAR *key,
+                        PortConfig *pc, bool primary);
+  void savePortGroupRules(SettingsManager *sm, const TCHAR *key,
+                          const std::vector<GroupPermissionRule> &rules);
+  bool loadPortGroupRules(SettingsManager *sm, const TCHAR *key,
+                          std::vector<GroupPermissionRule> *rules);
+
+  // Migration from old global config to per-port config format
+  void migrateToPerPortConfig(ServerConfig *config);
+  void copyGlobalAuthToPortConfig(ServerConfig *config, PortConfig *pc);
+
   bool save(SettingsManager *sm);
   bool load(SettingsManager *sm);
 

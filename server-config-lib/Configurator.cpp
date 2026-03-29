@@ -215,6 +215,9 @@ bool Configurator::load(SettingsManager *sm)
     loadResult = false;
   }
 
+  // Migrate old global config to per-port format if needed
+  migrateToPerPortConfig(&m_serverConfig);
+
   m_isFirstLoad = false;
 
   return loadResult;
@@ -983,23 +986,61 @@ bool Configurator::savePortConfig(SettingsManager *sm)
   bool saveResult = true;
   AutoLock l(&m_serverConfig);
 
-  std::vector<PortMapping> allPorts = m_serverConfig.getAllPortMappings();
-  UINT portCount = (UINT)allPorts.size();
+  std::vector<PortConfig> allPorts = m_serverConfig.getAllPortConfigs();
 
-  if (!sm->setUINT(_T("PortCount"), portCount)) {
-    saveResult = false;
+  // Fall back to legacy if no port configs populated yet
+  if (allPorts.empty()) {
+    std::vector<PortMapping> allMappings = m_serverConfig.getAllPortMappings();
+    UINT portCount = (UINT)allMappings.size();
+    if (!sm->setUINT(_T("PortCount"), portCount)) saveResult = false;
+    for (UINT i = 0; i < portCount; i++) {
+      StringStorage keyName;
+      keyName.format(_T("Port%u"), i);
+      StringStorage portStr;
+      allMappings[i].toString(&portStr);
+      if (!sm->setString(keyName.getString(), portStr.getString()))
+        saveResult = false;
+    }
+    return saveResult;
   }
 
+  UINT portCount = (UINT)allPorts.size();
+  if (!sm->setUINT(_T("PortCount"), portCount)) saveResult = false;
+
   for (UINT i = 0; i < portCount; i++) {
-    StringStorage keyName;
-    keyName.format(_T("Port%u"), i);
+    const PortConfig &pc = allPorts[i];
 
-    StringStorage portStr;
-    allPorts[i].toString(&portStr);
-
-    if (!sm->setString(keyName.getString(), portStr.getString())) {
+    // Display config (port:rect|device)
+    PortMapping pm = pc.toPortMapping();
+    StringStorage pmStr;
+    pm.toString(&pmStr);
+    StringStorage key;
+    key.format(_T("Port%u"), i);
+    if (!sm->setString(key.getString(), pmStr.getString()))
       saveResult = false;
-    }
+
+    // Auth mode
+    key.format(_T("Port%u.AuthMode"), i);
+    sm->setUINT(key.getString(), (UINT)pc.getAuthMode());
+
+    // UseAuth
+    key.format(_T("Port%u.UseAuth"), i);
+    sm->setUINT(key.getString(), pc.isUsingAuthentication() ? 1 : 0);
+
+    // Passwords (binary data, same format as global passwords)
+    key.format(_T("Port%u.PrimaryPassword"), i);
+    savePortPassword(sm, key.getString(), pc, true);
+
+    key.format(_T("Port%u.ReadOnlyPassword"), i);
+    savePortPassword(sm, key.getString(), pc, false);
+
+    // Win auth permissions
+    key.format(_T("Port%u.DefaultWinAuthPerms"), i);
+    sm->setUINT(key.getString(), (UINT)pc.getDefaultWinAuthPermissions());
+
+    // Win auth group rules
+    key.format(_T("Port%u.WinAuthGroupRules"), i);
+    savePortGroupRules(sm, key.getString(), pc.getGroupRules());
   }
 
   return saveResult;
@@ -1011,34 +1052,229 @@ bool Configurator::loadPortConfig(SettingsManager *sm, ServerConfig *config)
   UINT portCount = 0;
 
   if (!sm->getUINT(_T("PortCount"), &portCount)) {
-    // No new format found — keep existing config
-    return true;
+    return true;  // No new format — keep existing config
   }
 
   m_isConfigLoadedPartly = true;
-  std::vector<PortMapping> allPorts;
+  std::vector<PortMapping> allMappings;
+  std::vector<PortConfig> allPorts;
+  bool hasPerPortAuth = false;
 
   for (UINT i = 0; i < portCount; i++) {
-    StringStorage keyName;
-    keyName.format(_T("Port%u"), i);
+    PortConfig pc;
+    StringStorage key;
+    key.format(_T("Port%u"), i);
 
+    // Load display config
     StringStorage portStr;
-    if (!sm->getString(keyName.getString(), &portStr)) {
+    if (sm->getString(key.getString(), &portStr)) {
+      PortMapping pm;
+      if (PortMapping::parse(portStr.getString(), &pm)) {
+        pc.fromPortMapping(pm);
+        allMappings.push_back(pm);
+      } else {
+        loadResult = false;
+        continue;
+      }
+    } else {
       loadResult = false;
       continue;
     }
 
-    PortMapping pm;
-    if (PortMapping::parse(portStr.getString(), &pm)) {
-      allPorts.push_back(pm);
-    } else {
-      loadResult = false;
+    // Load per-port auth mode
+    key.format(_T("Port%u.AuthMode"), i);
+    UINT uVal;
+    if (sm->getUINT(key.getString(), &uVal)) {
+      hasPerPortAuth = true;
+      if (uVal > 2) uVal = 0;
+      pc.setAuthMode((int)uVal);
     }
+
+    // Load UseAuth
+    key.format(_T("Port%u.UseAuth"), i);
+    if (sm->getUINT(key.getString(), &uVal)) {
+      pc.setUseAuthentication(uVal != 0);
+    }
+
+    // Load passwords
+    key.format(_T("Port%u.PrimaryPassword"), i);
+    loadPortPassword(sm, key.getString(), &pc, true);
+
+    key.format(_T("Port%u.ReadOnlyPassword"), i);
+    loadPortPassword(sm, key.getString(), &pc, false);
+
+    // Load win auth permissions
+    key.format(_T("Port%u.DefaultWinAuthPerms"), i);
+    if (sm->getUINT(key.getString(), &uVal)) {
+      pc.setDefaultWinAuthPermissions((UINT32)uVal);
+    }
+
+    // Load win auth group rules
+    key.format(_T("Port%u.WinAuthGroupRules"), i);
+    std::vector<GroupPermissionRule> rules;
+    if (loadPortGroupRules(sm, key.getString(), &rules)) {
+      pc.setGroupRules(rules);
+    }
+
+    allPorts.push_back(pc);
   }
 
-  if (allPorts.size() > 0) {
-    config->setAllPortMappings(allPorts);
+  // Always set legacy mappings for backward compat
+  if (!allMappings.empty()) {
+    config->setAllPortMappings(allMappings);
+  }
+
+  // Set per-port configs if auth data was found
+  if (hasPerPortAuth && !allPorts.empty()) {
+    config->setAllPortConfigs(allPorts);
   }
 
   return loadResult;
+}
+
+// --- Per-port config helpers ---
+
+void Configurator::savePortPassword(SettingsManager *sm, const TCHAR *key,
+                                    const PortConfig &pc, bool primary)
+{
+  if (primary && pc.hasPrimaryPassword()) {
+    unsigned char pwd[PortConfig::VNC_PASSWORD_SIZE];
+    pc.getPrimaryPassword(pwd);
+    sm->setBinaryData(key, pwd, PortConfig::VNC_PASSWORD_SIZE);
+  } else if (!primary && pc.hasReadOnlyPassword()) {
+    unsigned char pwd[PortConfig::VNC_PASSWORD_SIZE];
+    pc.getReadOnlyPassword(pwd);
+    sm->setBinaryData(key, pwd, PortConfig::VNC_PASSWORD_SIZE);
+  } else {
+    sm->deleteKey(key);
+  }
+}
+
+void Configurator::loadPortPassword(SettingsManager *sm, const TCHAR *key,
+                                    PortConfig *pc, bool primary)
+{
+  unsigned char buffer[PortConfig::VNC_PASSWORD_SIZE] = {0};
+  size_t passSize = PortConfig::VNC_PASSWORD_SIZE;
+
+  if (sm->getBinaryData(key, (void *)buffer, &passSize)) {
+    if (primary) {
+      pc->setPrimaryPassword(buffer);
+    } else {
+      pc->setReadOnlyPassword(buffer);
+    }
+  }
+}
+
+void Configurator::savePortGroupRules(SettingsManager *sm, const TCHAR *key,
+                                      const std::vector<GroupPermissionRule> &rules)
+{
+  StringStorage rulesStr(_T(""));
+  for (size_t i = 0; i < rules.size(); i++) {
+    StringStorage ruleStr;
+    rules[i].toString(&ruleStr);
+    rulesStr.appendString(ruleStr.getString());
+    if (i != rules.size() - 1) {
+      rulesStr.appendString(_T(","));
+    }
+  }
+  sm->setString(key, rulesStr.getString());
+}
+
+bool Configurator::loadPortGroupRules(SettingsManager *sm, const TCHAR *key,
+                                      std::vector<GroupPermissionRule> *rules)
+{
+  StringStorage rulesStr;
+  if (!sm->getString(key, &rulesStr)) return false;
+
+  rules->clear();
+  if (rulesStr.isEmpty()) return true;
+
+  size_t count = 0;
+  rulesStr.split(_T(","), NULL, &count);
+  if (count == 0) return true;
+
+  std::vector<StringStorage> chunks(count);
+  rulesStr.split(_T(","), &chunks.front(), &count);
+
+  for (size_t i = 0; i < count; i++) {
+    if (!chunks[i].isEmpty()) {
+      GroupPermissionRule rule;
+      if (GroupPermissionRule::parse(chunks[i].getString(), &rule)) {
+        rules->push_back(rule);
+      }
+    }
+  }
+  return true;
+}
+
+// --- Migration from old global config to per-port format ---
+
+void Configurator::copyGlobalAuthToPortConfig(ServerConfig *config,
+                                               PortConfig *pc)
+{
+  pc->setAuthMode(config->getAuthMode());
+  pc->setUseAuthentication(config->isUsingAuthentication());
+  pc->setDefaultWinAuthPermissions(config->getDefaultWinAuthPermissions());
+  pc->setGroupRules(config->getGroupRules());
+
+  unsigned char pass[ServerConfig::VNC_PASSWORD_SIZE];
+  if (config->hasPrimaryPassword()) {
+    config->getPrimaryPassword(pass);
+    pc->setPrimaryPassword(pass);
+    SecureZeroMemory(pass, sizeof(pass));
+  }
+  if (config->hasReadOnlyPassword()) {
+    config->getReadOnlyPassword(pass);
+    pc->setReadOnlyPassword(pass);
+    SecureZeroMemory(pass, sizeof(pass));
+  }
+
+  // Deep-copy global IP access rules
+  IpAccessControl *globalIp = config->getAccessControl();
+  IpAccessControl *portIp = pc->getIpAccessControl();
+  for (size_t i = 0; i < globalIp->size(); i++) {
+    IpAccessRule *src = (*globalIp)[i];
+    IpAccessRule *copy = new IpAccessRule();
+    copy->setAction(src->getAction());
+    StringStorage firstIp, lastIp;
+    src->getFirstIp(&firstIp);
+    src->getLastIp(&lastIp);
+    copy->setFirstIp(firstIp.getString());
+    copy->setLastIp(lastIp.getString());
+    portIp->push_back(copy);
+  }
+}
+
+void Configurator::migrateToPerPortConfig(ServerConfig *config)
+{
+  // Skip if already has per-port config (new format loaded)
+  if (config->getPortConfigCount() > 0) {
+    return;
+  }
+
+  std::vector<PortConfig> portConfigs;
+
+  // Build PortConfig for main port
+  PortConfig mainPc;
+  mainPc.setPort(config->getRfbPort());
+  PortMapping mainPm = config->getMainPortMapping();
+  mainPc.setRect(mainPm.getRect());
+  mainPc.setDevicePath(mainPm.getDevicePath().getString());
+  copyGlobalAuthToPortConfig(config, &mainPc);
+  portConfigs.push_back(mainPc);
+
+  // Build PortConfig for each extra port
+  AutoLock l(config);
+  PortMappingContainer *extras = config->getPortMappingContainer();
+  for (size_t i = 0; i < extras->count(); i++) {
+    const PortMapping *pm = extras->at(i);
+    PortConfig pc;
+    pc.setPort(pm->getPort());
+    pc.setRect(pm->getRect());
+    pc.setDevicePath(pm->getDevicePath().getString());
+    copyGlobalAuthToPortConfig(config, &pc);
+    portConfigs.push_back(pc);
+  }
+
+  config->setAllPortConfigs(portConfigs);
 }

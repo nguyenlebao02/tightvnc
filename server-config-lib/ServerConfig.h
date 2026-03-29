@@ -28,6 +28,7 @@
 #include "util/StringVector.h"
 #include "util/Exception.h"
 #include "PortMappingContainer.h"
+#include "PortConfig.h"
 #include "IpAccessControl.h"
 #include "thread/AutoLock.h"
 #include "thread/LocalMutex.h"
@@ -293,6 +294,21 @@ public:
   void setAllPortMappings(const std::vector<PortMapping> &mappings);
 
   //
+  // Unified per-port configuration (replaces main/extra port distinction)
+  //
+
+  // Returns a thread-safe copy of all port configs.
+  std::vector<PortConfig> getAllPortConfigs();
+  // Replaces all port configs. Thread-safe.
+  void setAllPortConfigs(const std::vector<PortConfig> &configs);
+  // Returns a copy of the PortConfig for the given port, or default if not found.
+  PortConfig getPortConfigByPort(int port);
+  // Returns true if a PortConfig exists for the given port.
+  bool hasPortConfig(int port);
+  // Returns the number of configured ports.
+  size_t getPortConfigCount();
+
+  //
   // Video regions
   //
 
@@ -427,6 +443,7 @@ protected:
 
   PortMapping m_mainPortMapping;  // Main port (5900 default) with display + auth
   PortMappingContainer m_portMappings;  // Extra ports
+  std::vector<PortConfig> m_portConfigs;  // Unified per-port config (all ports)
 
   //
   // Ip access control config

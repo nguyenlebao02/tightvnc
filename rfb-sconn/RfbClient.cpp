@@ -42,7 +42,8 @@ RfbClient::RfbClient(NewConnectionEvents *newConnectionEvents,
                      const ViewPortState *constViewPort,
                      const ViewPortState *dynViewPort,
                      int idleTimeout,
-                     LogWriter *log)
+                     LogWriter *log,
+                     const PortConfig *portConfig)
 : m_socket(socket), // now we own the socket
   m_newConnectionEvents(newConnectionEvents),
   m_viewOnly(viewOnly),
@@ -61,7 +62,8 @@ RfbClient::RfbClient(NewConnectionEvents *newConnectionEvents,
   m_constViewPort(constViewPort, log),
   m_dynamicViewPort(dynViewPort, log),
   m_idleTimer(idleTimeout), m_idleTimeout(idleTimeout),
-  m_log(log)
+  m_log(log),
+  m_portConfig(portConfig ? *portConfig : PortConfig())
 {
   resume();
 }
@@ -188,7 +190,7 @@ void RfbClient::execute()
   EchoExtensionRequestHandler *echoExtension = 0;
 
   RfbInitializer rfbInitializer(&sockStream, m_extAuthListener, this,
-                                !m_isOutgoing);
+                                !m_isOutgoing, &m_portConfig);
 
   try {
     // First initialization phase
