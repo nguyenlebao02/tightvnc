@@ -33,6 +33,9 @@
 #include "gui/ListBox.h"
 
 #include "server-config-lib/Configurator.h"
+#include "server-config-lib/PortConfig.h"
+
+#include <vector>
 
 // Dialog for the Connection tab (IDD_CONFIG_CONNECTION_PAGE).
 // Handles RFB port, HTTP port, and extra port mappings.
@@ -43,6 +46,9 @@ public:
   virtual ~ConnectionConfigDialog();
 
   void setParentDialog(BaseDialog *dialog);
+
+  // Set pointer to ConfigDialog's editable port configs vector.
+  void setPortConfigs(std::vector<PortConfig> *portConfigs) { m_portConfigs = portConfigs; }
 
   // Validate user input before apply; shows error on failure.
   bool validateInput();
@@ -93,6 +99,9 @@ protected:
 
   // Pointer into ServerConfig's port mapping container (not owned)
   PortMappingContainer *m_extraPorts;
+
+  // Pointer to ConfigDialog's editable port configs vector (not owned)
+  std::vector<PortConfig> *m_portConfigs;
 };
 
 #endif // _CONNECTION_CONFIG_DIALOG_H_

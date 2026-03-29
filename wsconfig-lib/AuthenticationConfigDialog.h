@@ -29,6 +29,7 @@
 #include "gui/CheckBox.h"
 #include "gui/TextBox.h"
 #include "server-config-lib/ServerConfig.h"
+#include "server-config-lib/PortConfig.h"
 #include "PasswordControl.h"
 
 // Consolidated authentication settings dialog (Phase 3 redesign).
@@ -41,6 +42,9 @@ public:
   virtual ~AuthenticationConfigDialog();
 
   void setParentDialog(BaseDialog *dialog);
+
+  // Set the per-port config to edit; call before updateUI().
+  void setPortConfig(PortConfig *pc) { m_portConfig = pc; }
 
   // BaseDialog overrides
   virtual BOOL onInitDialog();
@@ -76,6 +80,7 @@ private:
 
 protected:
   ServerConfig *m_config;
+  PortConfig   *m_portConfig;  // per-port config being edited
 
   // VNC auth controls
   CheckBox m_useAuthentication;

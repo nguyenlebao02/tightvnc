@@ -31,6 +31,7 @@
 #include "gui/BalloonTip.h"
 
 #include "server-config-lib/Configurator.h"
+#include "server-config-lib/PortConfig.h"
 
 #include "EditIpAccessRuleDialog.h"
 
@@ -41,6 +42,9 @@ public:
   virtual ~IpAccessControlDialog();
 
   void setParentDialog(BaseDialog *dialog);
+
+  // Set the per-port config to edit; call before updateUI().
+  void setPortConfig(PortConfig *pc) { m_portConfig = pc; }
 
   //
   // BaseDialog overrided methods
@@ -92,6 +96,7 @@ private:
   // Configuration
   IpAccessControl *m_container;
   ServerConfig *m_config;
+  PortConfig   *m_portConfig;  // per-port config being edited
   // Child dialog
   EditIpAccessRuleDialog m_editDialog;
   // Controls

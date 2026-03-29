@@ -30,10 +30,14 @@
 
 #include "gui/BaseDialog.h"
 #include "gui/Control.h"
+#include "gui/ComboBox.h"
 #include "gui/ListBox.h"
 #include "gui/TabControl.h"
 
 #include "server-config-lib/Configurator.h"
+#include "server-config-lib/PortConfig.h"
+
+#include <vector>
 
 #include "ConnectionConfigDialog.h"
 #include "AuthenticationConfigDialog.h"
@@ -60,6 +64,16 @@ public:
 
   bool isConfiguringService();
 
+  // Returns pointer to the currently-selected PortConfig in the combo.
+  // Valid only while the dialog is alive.
+  PortConfig *getSelectedPortConfig();
+
+  // Returns the full editable list of per-port configs.
+  std::vector<PortConfig> &getPortConfigs() { return m_portConfigs; }
+
+  // Rebuilds the port selector combo (call after add/remove port).
+  void refreshPortSelector();
+
 protected:
 
   void initControls();
@@ -76,10 +90,16 @@ protected:
   // Tab handlers
   void onTabChange();
   void onTabChanging();
+  // Port selector handler
+  void onPortSelectorChange();
 private:
   void moveDialogToTabControl(BaseDialog *dialog);
   bool validateInput();
   void updateCaption();
+  // Notify per-port tabs to load data from the selected PortConfig.
+  void switchPortContext();
+  // Write current tab state back into the selected PortConfig before switching.
+  void saveCurrentPortContext();
 protected:
   // Controls
   Control m_ctrlApplyButton;
@@ -100,6 +120,16 @@ protected:
   ControlCommand *m_reloadConfigCommand;
 
   int m_lastSelectedTabIndex;
+
+  // Port selector combo — created programmatically above the tab control
+  static const UINT IDC_PORT_SELECTOR_COMBO = 1200;
+  static const UINT IDC_PORT_SELECTOR_LABEL = 1201;
+  ComboBox m_portSelector;
+  HWND m_portSelectorLabel;
+
+  // Editable copy of all per-port configs for the dialog session
+  std::vector<PortConfig> m_portConfigs;
+  int m_selectedPortIndex;
 };
 
 #endif

@@ -53,7 +53,8 @@ static void buildDisplayString(const PortMapping *pm, StringStorage *out)
 ConnectionConfigDialog::ConnectionConfigDialog()
 : BaseDialog(IDD_CONFIG_CONNECTION_PAGE),
   m_parent(NULL),
-  m_extraPorts(NULL)
+  m_extraPorts(NULL),
+  m_portConfigs(NULL)
 {
 }
 
@@ -101,6 +102,24 @@ void ConnectionConfigDialog::initControls()
   m_removeButton.setWindow(GetDlgItem(hwnd, IDC_REMOVE_PORT));
 }
 
+// Build a display string for a PortConfig entry in the listbox.
+static void buildPortConfigDisplayString(const PortConfig *pc, StringStorage *out)
+{
+  StringStorage rectStr;
+  pc->getRect().toString(&rectStr);
+
+  const StringStorage &devPath = pc->getDevicePath();
+  bool hasDevice = (devPath.getLength() > 0);
+
+  if (hasDevice) {
+    out->format(_T(":%d  %s  [%s]"),
+                pc->getPort(), rectStr.getString(), devPath.getString());
+  } else {
+    out->format(_T(":%d  %s"),
+                pc->getPort(), rectStr.getString());
+  }
+}
+
 void ConnectionConfigDialog::updateUI()
 {
   ServerConfig *config = Configurator::getInstance()->getServerConfig();
@@ -113,15 +132,24 @@ void ConnectionConfigDialog::updateUI()
   m_acceptHttpConnections.check(config->isAcceptingHttpConnections());
   m_httpPort.setSignedInt(config->getHttpPort());
 
-  // Load extra port mappings into listbox
-  m_extraPorts = config->getPortMappingContainer();
+  // Load port mappings into listbox — prefer unified PortConfig list
   m_mappingsListBox.clear();
 
-  StringStorage mappingString;
-  for (size_t i = 0; i < m_extraPorts->count(); i++) {
-    buildDisplayString(m_extraPorts->at(i), &mappingString);
-    _ASSERT((int)i == i);
-    m_mappingsListBox.insertString((int)i, mappingString.getString());
+  if (m_portConfigs != NULL && !m_portConfigs->empty()) {
+    StringStorage mappingString;
+    for (size_t i = 0; i < m_portConfigs->size(); i++) {
+      buildPortConfigDisplayString(&(*m_portConfigs)[i], &mappingString);
+      m_mappingsListBox.insertString((int)i, mappingString.getString());
+    }
+  } else {
+    // Fallback: legacy extra ports
+    m_extraPorts = config->getPortMappingContainer();
+    StringStorage mappingString;
+    for (size_t i = 0; i < m_extraPorts->count(); i++) {
+      buildDisplayString(m_extraPorts->at(i), &mappingString);
+      _ASSERT((int)i == i);
+      m_mappingsListBox.insertString((int)i, mappingString.getString());
+    }
   }
 
   // Sync enabled state of dependent controls
@@ -153,8 +181,11 @@ void ConnectionConfigDialog::apply()
   StringParser::parseInt(httpPortText.getString(), &httpPort);
   config->setHttpPort(httpPort);
 
-  // Extra ports are saved in-place through the PortMappingContainer pointer;
-  // add/edit/remove operations already mutated m_extraPorts directly.
+  // Save unified port configs to ServerConfig
+  if (m_portConfigs != NULL) {
+    config->setAllPortConfigs(*m_portConfigs);
+  }
+  // Legacy extra ports are saved in-place through the PortMappingContainer pointer.
 }
 
 bool ConnectionConfigDialog::validateInput()
@@ -286,11 +317,40 @@ void ConnectionConfigDialog::onAddButtonClick()
   addDialog.setParent(&m_ctrlThis);
 
   if (addDialog.showModal() == IDOK) {
-    StringStorage mappingString;
-    buildDisplayString(&newPM, &mappingString);
-    m_mappingsListBox.addString(mappingString.getString());
-    m_extraPorts->pushBack(newPM);
+    if (m_portConfigs != NULL) {
+      // Create new PortConfig from the mapping
+      PortConfig newPC;
+      newPC.fromPortMapping(newPM);
+      // Inherit auth from first port if available
+      if (!m_portConfigs->empty()) {
+        PortConfig &first = (*m_portConfigs)[0];
+        newPC.setAuthMode(first.getAuthMode());
+        newPC.setUseAuthentication(first.isUsingAuthentication());
+        newPC.setDefaultWinAuthPermissions(first.getDefaultWinAuthPermissions());
+        if (first.hasPrimaryPassword()) {
+          unsigned char pass[PortConfig::VNC_PASSWORD_SIZE];
+          first.getPrimaryPassword(pass);
+          newPC.setPrimaryPassword(pass);
+        }
+        if (first.hasReadOnlyPassword()) {
+          unsigned char pass[PortConfig::VNC_PASSWORD_SIZE];
+          first.getReadOnlyPassword(pass);
+          newPC.setReadOnlyPassword(pass);
+        }
+      }
+      m_portConfigs->push_back(newPC);
+      StringStorage mappingString;
+      buildPortConfigDisplayString(&newPC, &mappingString);
+      m_mappingsListBox.addString(mappingString.getString());
+    } else {
+      StringStorage mappingString;
+      buildDisplayString(&newPM, &mappingString);
+      m_mappingsListBox.addString(mappingString.getString());
+      m_extraPorts->pushBack(newPM);
+    }
     ((ConfigDialog *)m_parent)->updateApplyButtonState();
+    // Refresh port selector in parent dialog
+    ((ConfigDialog *)m_parent)->refreshPortSelector();
   }
 }
 
@@ -301,17 +361,34 @@ void ConnectionConfigDialog::onEditButtonClick()
     return;
   }
 
-  PortMapping *pPM = m_extraPorts->at(sel);
+  if (m_portConfigs != NULL && sel < (int)m_portConfigs->size()) {
+    PortMapping pm = (*m_portConfigs)[sel].toPortMapping();
 
-  EditPortMappingDialog editDialog(EditPortMappingDialog::Edit);
-  editDialog.setParent(&m_ctrlThis);
-  editDialog.setMapping(pPM);
+    EditPortMappingDialog editDialog(EditPortMappingDialog::Edit);
+    editDialog.setParent(&m_ctrlThis);
+    editDialog.setMapping(&pm);
 
-  if (editDialog.showModal() == IDOK) {
-    StringStorage mappingString;
-    buildDisplayString(pPM, &mappingString);
-    m_mappingsListBox.setItemText(sel, mappingString.getString());
-    ((ConfigDialog *)m_parent)->updateApplyButtonState();
+    if (editDialog.showModal() == IDOK) {
+      (*m_portConfigs)[sel].fromPortMapping(pm);
+      StringStorage mappingString;
+      buildPortConfigDisplayString(&(*m_portConfigs)[sel], &mappingString);
+      m_mappingsListBox.setItemText(sel, mappingString.getString());
+      ((ConfigDialog *)m_parent)->updateApplyButtonState();
+      ((ConfigDialog *)m_parent)->refreshPortSelector();
+    }
+  } else {
+    PortMapping *pPM = m_extraPorts->at(sel);
+
+    EditPortMappingDialog editDialog(EditPortMappingDialog::Edit);
+    editDialog.setParent(&m_ctrlThis);
+    editDialog.setMapping(pPM);
+
+    if (editDialog.showModal() == IDOK) {
+      StringStorage mappingString;
+      buildDisplayString(pPM, &mappingString);
+      m_mappingsListBox.setItemText(sel, mappingString.getString());
+      ((ConfigDialog *)m_parent)->updateApplyButtonState();
+    }
   }
 }
 
@@ -322,9 +399,15 @@ void ConnectionConfigDialog::onRemoveButtonClick()
     return;
   }
 
+  if (m_portConfigs != NULL && sel < (int)m_portConfigs->size()) {
+    m_portConfigs->erase(m_portConfigs->begin() + sel);
+  } else {
+    m_extraPorts->remove(sel);
+  }
+
   m_mappingsListBox.removeString(sel);
-  m_extraPorts->remove(sel);
   ((ConfigDialog *)m_parent)->updateApplyButtonState();
+  ((ConfigDialog *)m_parent)->refreshPortSelector();
 
   // Restore a reasonable selection after removal
   if (m_mappingsListBox.getCount() > 0) {

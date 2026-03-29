@@ -32,6 +32,7 @@
 
 #include "server-config-lib/Configurator.h"
 #include "server-config-lib/GroupPermissionRule.h"
+#include "server-config-lib/PortConfig.h"
 
 #include <vector>
 
@@ -46,6 +47,9 @@ public:
   virtual ~PermissionsConfigDialog();
 
   void setParentDialog(BaseDialog *dialog);
+
+  // Set the per-port config to edit; call before updateUI().
+  void setPortConfig(PortConfig *pc) { m_portConfig = pc; }
 
   // BaseDialog overrides
   virtual BOOL onInitDialog();
@@ -91,6 +95,7 @@ private:
 
 protected:
   ServerConfig *m_config;
+  PortConfig   *m_portConfig;  // per-port config being edited
   std::vector<GroupPermissionRule> m_rules; // local editable copy
 
   // Controls

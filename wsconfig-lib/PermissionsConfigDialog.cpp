@@ -37,7 +37,8 @@
 PermissionsConfigDialog::PermissionsConfigDialog()
 : BaseDialog(IDD_CONFIG_PERMISSIONS_PAGE),
   m_parentDialog(NULL),
-  m_config(NULL)
+  m_config(NULL),
+  m_portConfig(NULL)
 {
 }
 
@@ -100,8 +101,12 @@ void PermissionsConfigDialog::updateUI()
 {
   if (m_config == NULL) return;
 
-  // Load group rules into local editable copy
-  m_rules = m_config->getGroupRules();
+  // Load group rules from per-port config if available, else global
+  if (m_portConfig != NULL) {
+    m_rules = m_portConfig->getGroupRules();
+  } else {
+    m_rules = m_config->getGroupRules();
+  }
   refreshGroupList();
   updateButtonsState();
 }
@@ -448,8 +453,11 @@ bool PermissionsConfigDialog::validateInput()
 
 void PermissionsConfigDialog::apply()
 {
-  if (m_config == NULL) return;
-  m_config->setGroupRules(m_rules);
+  if (m_portConfig != NULL) {
+    m_portConfig->setGroupRules(m_rules);
+  } else if (m_config != NULL) {
+    m_config->setGroupRules(m_rules);
+  }
 }
 
 // --- Static permission helpers (mirror WinAuthConfigDialog) ---

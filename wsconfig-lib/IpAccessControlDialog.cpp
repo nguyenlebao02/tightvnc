@@ -34,7 +34,8 @@
 #include "util/AnsiStringStorage.h"
 
 IpAccessControlDialog::IpAccessControlDialog()
-: BaseDialog(IDD_CONFIG_ACCESS_CONTROL_PAGE), m_parentDialog(NULL)
+: BaseDialog(IDD_CONFIG_ACCESS_CONTROL_PAGE), m_parentDialog(NULL),
+  m_portConfig(NULL)
 {
 }
 
@@ -50,7 +51,12 @@ void IpAccessControlDialog::setParentDialog(BaseDialog *dialog)
 BOOL IpAccessControlDialog::onInitDialog()
 {
   m_config = Configurator::getInstance()->getServerConfig();
-  m_container = m_config->getAccessControl();
+  // Use per-port IP container if available, else global
+  if (m_portConfig != NULL) {
+    m_container = m_portConfig->getIpAccessControl();
+  } else {
+    m_container = m_config->getAccessControl();
+  }
   m_editDialog.setParent(&m_ctrlThis);
   initControls();
   updateUI();

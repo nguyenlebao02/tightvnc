@@ -33,6 +33,7 @@ AuthenticationConfigDialog::AuthenticationConfigDialog()
 : BaseDialog(IDD_CONFIG_AUTHENTICATION_PAGE),
   m_parentDialog(NULL),
   m_config(NULL),
+  m_portConfig(NULL),
   m_ppControl(NULL),
   m_vpControl(NULL),
   m_cpControl(NULL)
@@ -109,46 +110,91 @@ void AuthenticationConfigDialog::updateUI()
 {
   if (m_config == NULL) return;
 
-  // --- VNC password auth section ---
-  m_useAuthentication.check(m_config->isUsingAuthentication());
+  // --- VNC password auth section (per-port via m_portConfig) ---
+  if (m_portConfig != NULL) {
+    m_useAuthentication.check(m_portConfig->isUsingAuthentication());
 
-  if (m_config->hasPrimaryPassword()) {
-    UINT8 crypted[8];
-    m_config->getPrimaryPassword(crypted);
-    m_ppControl->setCryptedPassword((const char *)crypted);
+    // Reset password controls before loading
+    m_ppControl->unsetPassword(false, NULL);
+    m_vpControl->unsetPassword(false, NULL);
+
+    if (m_portConfig->hasPrimaryPassword()) {
+      UINT8 crypted[8];
+      m_portConfig->getPrimaryPassword(crypted);
+      m_ppControl->setCryptedPassword((const char *)crypted);
+    }
+
+    if (m_portConfig->hasReadOnlyPassword()) {
+      UINT8 crypted[8];
+      m_portConfig->getReadOnlyPassword(crypted);
+      m_vpControl->setCryptedPassword((const char *)crypted);
+    }
+
+    // --- Windows auth section (per-port) ---
+    int authMode = m_portConfig->getAuthMode();
+    bool winEnabled = (authMode == PortConfig::AUTH_WINDOWS_ONLY ||
+                       authMode == PortConfig::AUTH_BOTH);
+    m_winAuthEnable.check(winEnabled);
+
+    int modeIndex = 0;
+    switch (authMode) {
+    case PortConfig::AUTH_VNC_ONLY:     modeIndex = 0; break;
+    case PortConfig::AUTH_WINDOWS_ONLY: modeIndex = 1; break;
+    case PortConfig::AUTH_BOTH:         modeIndex = 2; break;
+    }
+    SendMessage(m_authModeCombo.getWindow(), CB_SETCURSEL, modeIndex, 0);
+
+    // Default permission: map flags to combo index
+    UINT32 defPerm = m_portConfig->getDefaultWinAuthPermissions();
+    int defPermIdx = 0;
+    if (defPerm & ClientPermissions::PERM_DENY) {
+      defPermIdx = 3;
+    } else if (defPerm == ClientPermissions::PERM_VIEW_ONLY) {
+      defPermIdx = 1;
+    } else if (defPerm == (ClientPermissions::PERM_VIEW_ONLY | ClientPermissions::PERM_CLIPBOARD)) {
+      defPermIdx = 2;
+    }
+    SendMessage(m_defaultPermCombo.getWindow(), CB_SETCURSEL, defPermIdx, 0);
+  } else {
+    // Fallback: read from global config (shouldn't happen normally)
+    m_useAuthentication.check(m_config->isUsingAuthentication());
+
+    if (m_config->hasPrimaryPassword()) {
+      UINT8 crypted[8];
+      m_config->getPrimaryPassword(crypted);
+      m_ppControl->setCryptedPassword((const char *)crypted);
+    }
+
+    if (m_config->hasReadOnlyPassword()) {
+      UINT8 crypted[8];
+      m_config->getReadOnlyPassword(crypted);
+      m_vpControl->setCryptedPassword((const char *)crypted);
+    }
+
+    bool winEnabled = m_config->isWinAuthEnabled();
+    m_winAuthEnable.check(winEnabled);
+
+    int modeIndex = 0;
+    switch (m_config->getAuthMode()) {
+    case ServerConfig::AUTH_VNC_ONLY:     modeIndex = 0; break;
+    case ServerConfig::AUTH_WINDOWS_ONLY: modeIndex = 1; break;
+    case ServerConfig::AUTH_BOTH:         modeIndex = 2; break;
+    }
+    SendMessage(m_authModeCombo.getWindow(), CB_SETCURSEL, modeIndex, 0);
+
+    UINT32 defPerm = m_config->getDefaultWinAuthPermissions();
+    int defPermIdx = 0;
+    if (defPerm & ClientPermissions::PERM_DENY) {
+      defPermIdx = 3;
+    } else if (defPerm == ClientPermissions::PERM_VIEW_ONLY) {
+      defPermIdx = 1;
+    } else if (defPerm == (ClientPermissions::PERM_VIEW_ONLY | ClientPermissions::PERM_CLIPBOARD)) {
+      defPermIdx = 2;
+    }
+    SendMessage(m_defaultPermCombo.getWindow(), CB_SETCURSEL, defPermIdx, 0);
   }
 
-  if (m_config->hasReadOnlyPassword()) {
-    UINT8 crypted[8];
-    m_config->getReadOnlyPassword(crypted);
-    m_vpControl->setCryptedPassword((const char *)crypted);
-  }
-
-  // --- Windows auth section ---
-  bool winEnabled = m_config->isWinAuthEnabled();
-  m_winAuthEnable.check(winEnabled);
-
-  int modeIndex = 0;
-  switch (m_config->getAuthMode()) {
-  case ServerConfig::AUTH_VNC_ONLY:     modeIndex = 0; break;
-  case ServerConfig::AUTH_WINDOWS_ONLY: modeIndex = 1; break;
-  case ServerConfig::AUTH_BOTH:         modeIndex = 2; break;
-  }
-  SendMessage(m_authModeCombo.getWindow(), CB_SETCURSEL, modeIndex, 0);
-
-  // Default permission: map flags to combo index
-  UINT32 defPerm = m_config->getDefaultWinAuthPermissions();
-  int defPermIdx = 0; // Full Control default
-  if (defPerm & ClientPermissions::PERM_DENY) {
-    defPermIdx = 3;
-  } else if (defPerm == ClientPermissions::PERM_VIEW_ONLY) {
-    defPermIdx = 1;
-  } else if (defPerm == (ClientPermissions::PERM_VIEW_ONLY | ClientPermissions::PERM_CLIPBOARD)) {
-    defPermIdx = 2;
-  }
-  SendMessage(m_defaultPermCombo.getWindow(), CB_SETCURSEL, defPermIdx, 0);
-
-  // --- Control interface auth section ---
+  // --- Control interface auth section (always global) ---
   m_useControlAuth.check(m_config->isControlAuthEnabled());
   m_repeatControlAuth.check(m_config->getControlAuthAlwaysChecking());
 
@@ -259,42 +305,76 @@ void AuthenticationConfigDialog::apply()
 {
   if (m_config == NULL) return;
 
-  // --- VNC auth ---
-  m_config->useAuthentication(m_useAuthentication.isChecked());
+  // --- Per-port VNC auth (written to PortConfig if available) ---
+  if (m_portConfig != NULL) {
+    m_portConfig->setUseAuthentication(m_useAuthentication.isChecked());
 
-  if (m_ppControl->hasPassword()) {
-    m_config->setPrimaryPassword((const unsigned char *)m_ppControl->getCryptedPassword());
+    if (m_ppControl->hasPassword()) {
+      m_portConfig->setPrimaryPassword((const unsigned char *)m_ppControl->getCryptedPassword());
+    } else {
+      m_portConfig->deletePrimaryPassword();
+    }
+
+    if (m_vpControl->hasPassword()) {
+      m_portConfig->setReadOnlyPassword((const unsigned char *)m_vpControl->getCryptedPassword());
+    } else {
+      m_portConfig->deleteReadOnlyPassword();
+    }
+
+    // Windows auth mode (per-port)
+    int modeIdx = (int)SendMessage(m_authModeCombo.getWindow(), CB_GETCURSEL, 0, 0);
+    switch (modeIdx) {
+    case 0: m_portConfig->setAuthMode(PortConfig::AUTH_VNC_ONLY);     break;
+    case 1: m_portConfig->setAuthMode(PortConfig::AUTH_WINDOWS_ONLY); break;
+    case 2: m_portConfig->setAuthMode(PortConfig::AUTH_BOTH);         break;
+    }
+
+    int defIdx = (int)SendMessage(m_defaultPermCombo.getWindow(), CB_GETCURSEL, 0, 0);
+    UINT32 defPerm = ClientPermissions::PERM_FULL_CONTROL;
+    switch (defIdx) {
+    case 0: defPerm = ClientPermissions::PERM_FULL_CONTROL; break;
+    case 1: defPerm = ClientPermissions::PERM_VIEW_ONLY;    break;
+    case 2: defPerm = ClientPermissions::PERM_VIEW_ONLY | ClientPermissions::PERM_CLIPBOARD; break;
+    case 3: defPerm = ClientPermissions::PERM_DENY;         break;
+    }
+    m_portConfig->setDefaultWinAuthPermissions(defPerm);
   } else {
-    m_config->deletePrimaryPassword();
+    // Fallback: write to global config
+    m_config->useAuthentication(m_useAuthentication.isChecked());
+
+    if (m_ppControl->hasPassword()) {
+      m_config->setPrimaryPassword((const unsigned char *)m_ppControl->getCryptedPassword());
+    } else {
+      m_config->deletePrimaryPassword();
+    }
+
+    if (m_vpControl->hasPassword()) {
+      m_config->setReadOnlyPassword((const unsigned char *)m_vpControl->getCryptedPassword());
+    } else {
+      m_config->deleteReadOnlyPassword();
+    }
+
+    m_config->enableWinAuth(m_winAuthEnable.isChecked());
+
+    int modeIdx = (int)SendMessage(m_authModeCombo.getWindow(), CB_GETCURSEL, 0, 0);
+    switch (modeIdx) {
+    case 0: m_config->setAuthMode(ServerConfig::AUTH_VNC_ONLY);     break;
+    case 1: m_config->setAuthMode(ServerConfig::AUTH_WINDOWS_ONLY); break;
+    case 2: m_config->setAuthMode(ServerConfig::AUTH_BOTH);         break;
+    }
+
+    int defIdx = (int)SendMessage(m_defaultPermCombo.getWindow(), CB_GETCURSEL, 0, 0);
+    UINT32 defPerm = ClientPermissions::PERM_FULL_CONTROL;
+    switch (defIdx) {
+    case 0: defPerm = ClientPermissions::PERM_FULL_CONTROL; break;
+    case 1: defPerm = ClientPermissions::PERM_VIEW_ONLY;    break;
+    case 2: defPerm = ClientPermissions::PERM_VIEW_ONLY | ClientPermissions::PERM_CLIPBOARD; break;
+    case 3: defPerm = ClientPermissions::PERM_DENY;         break;
+    }
+    m_config->setDefaultWinAuthPermissions(defPerm);
   }
 
-  if (m_vpControl->hasPassword()) {
-    m_config->setReadOnlyPassword((const unsigned char *)m_vpControl->getCryptedPassword());
-  } else {
-    m_config->deleteReadOnlyPassword();
-  }
-
-  // --- Windows auth ---
-  m_config->enableWinAuth(m_winAuthEnable.isChecked());
-
-  int modeIdx = (int)SendMessage(m_authModeCombo.getWindow(), CB_GETCURSEL, 0, 0);
-  switch (modeIdx) {
-  case 0: m_config->setAuthMode(ServerConfig::AUTH_VNC_ONLY);     break;
-  case 1: m_config->setAuthMode(ServerConfig::AUTH_WINDOWS_ONLY); break;
-  case 2: m_config->setAuthMode(ServerConfig::AUTH_BOTH);         break;
-  }
-
-  int defIdx = (int)SendMessage(m_defaultPermCombo.getWindow(), CB_GETCURSEL, 0, 0);
-  UINT32 defPerm = ClientPermissions::PERM_FULL_CONTROL;
-  switch (defIdx) {
-  case 0: defPerm = ClientPermissions::PERM_FULL_CONTROL; break;
-  case 1: defPerm = ClientPermissions::PERM_VIEW_ONLY;    break;
-  case 2: defPerm = ClientPermissions::PERM_VIEW_ONLY | ClientPermissions::PERM_CLIPBOARD; break;
-  case 3: defPerm = ClientPermissions::PERM_DENY;         break;
-  }
-  m_config->setDefaultWinAuthPermissions(defPerm);
-
-  // --- Control interface auth ---
+  // --- Control interface auth (always global) ---
   m_config->useControlAuth(m_useControlAuth.isChecked());
   m_config->setControlAuthAlwaysChecking(m_repeatControlAuth.isChecked());
 

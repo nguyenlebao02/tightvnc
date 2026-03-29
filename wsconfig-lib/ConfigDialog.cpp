@@ -30,7 +30,9 @@ ConfigDialog::ConfigDialog(bool forService, ControlCommand *reloadConfigCommand)
 : BaseDialog(IDD_CONFIG),
   m_isConfiguringService(forService),
   m_reloadConfigCommand(reloadConfigCommand),
-  m_lastSelectedTabIndex(0)
+  m_lastSelectedTabIndex(0),
+  m_portSelectorLabel(NULL),
+  m_selectedPortIndex(0)
 {
 }
 
@@ -38,7 +40,9 @@ ConfigDialog::ConfigDialog(bool forService)
 : BaseDialog(IDD_CONFIG),
   m_isConfiguringService(forService),
   m_reloadConfigCommand(NULL),
-  m_lastSelectedTabIndex(0)
+  m_lastSelectedTabIndex(0),
+  m_portSelectorLabel(NULL),
+  m_selectedPortIndex(0)
 {
 }
 
@@ -46,7 +50,9 @@ ConfigDialog::ConfigDialog()
 : BaseDialog(IDD_CONFIG),
   m_isConfiguringService(false),
   m_reloadConfigCommand(NULL),
-  m_lastSelectedTabIndex(0)
+  m_lastSelectedTabIndex(0),
+  m_portSelectorLabel(NULL),
+  m_selectedPortIndex(0)
 {
 }
 
@@ -110,6 +116,11 @@ BOOL ConfigDialog::onCommand(UINT controlID, UINT notificationID)
   case IDC_APPLY:
     onApplyButtonClick();
     break;
+  case IDC_PORT_SELECTOR_COMBO:
+    if (notificationID == CBN_SELCHANGE) {
+      onPortSelectorChange();
+    }
+    break;
   }
   return TRUE;
 }
@@ -138,7 +149,48 @@ BOOL ConfigDialog::onInitDialog()
 
   initControls();
 
+  // Load per-port configs into editable copy
+  ServerConfig *srvConfig = m_config->getServerConfig();
+  m_portConfigs = srvConfig->getAllPortConfigs();
+  m_selectedPortIndex = 0;
+
+  // Create port selector label and combo above the tab control
+  HWND dialogHwnd = m_ctrlThis.getWindow();
+  HFONT hFont = (HFONT)SendMessage(dialogHwnd, WM_GETFONT, 0, 0);
+
+  RECT tabRect;
+  GetWindowRect(GetDlgItem(dialogHwnd, IDC_CONFIG_TAB), &tabRect);
+  POINT tabPos = { tabRect.left, tabRect.top };
+  ScreenToClient(dialogHwnd, &tabPos);
+
+  // Place label and combo above the tab control
+  int labelW = 80, comboW = 200, comboH = 200, ctrlH = 22;
+  int y = tabPos.y - ctrlH - 6;
+
+  m_portSelectorLabel = CreateWindow(
+    _T("STATIC"), _T("Active Port:"),
+    WS_CHILD | WS_VISIBLE | SS_RIGHT,
+    tabPos.x, y + 3, labelW, ctrlH,
+    dialogHwnd, (HMENU)(UINT_PTR)IDC_PORT_SELECTOR_LABEL,
+    NULL, NULL);
+  if (hFont) SendMessage(m_portSelectorLabel, WM_SETFONT, (WPARAM)hFont, TRUE);
+
+  HWND hCombo = CreateWindow(
+    _T("COMBOBOX"), _T(""),
+    WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL,
+    tabPos.x + labelW + 4, y, comboW, comboH,
+    dialogHwnd, (HMENU)(UINT_PTR)IDC_PORT_SELECTOR_COMBO,
+    NULL, NULL);
+  if (hFont) SendMessage(hCombo, WM_SETFONT, (WPARAM)hFont, TRUE);
+  m_portSelector.setWindow(hCombo);
+
+  // Populate port selector combo
+  refreshPortSelector();
+
   m_tabControl.addTab(NULL, _T("Temp"));
+
+  // Set up per-port context for tabs before creating them
+  m_connectionDialog.setPortConfigs(&m_portConfigs);
 
   m_connectionDialog.setParent(&m_ctrlThis);
   m_connectionDialog.setParentDialog(this);
@@ -186,6 +238,9 @@ BOOL ConfigDialog::onInitDialog()
 
   m_tabControl.removeTab(0);
 
+  // Push initial per-port context to tabs
+  switchPortContext();
+
   m_tabControl.showTab(m_lastSelectedTabIndex);
   m_tabControl.setFocus();
 
@@ -220,6 +275,9 @@ void ConfigDialog::onApplyButtonClick()
   // Check values that specified in gui.
   bool canApply = m_ctrlApplyButton.isEnabled() && validateInput();
 
+  // Save current per-port tab state into the selected PortConfig before applying
+  saveCurrentPortContext();
+
   // Fill global server configuration with values from gui.
   if (canApply) {
     m_connectionDialog.apply();
@@ -229,6 +287,10 @@ void ConfigDialog::onApplyButtonClick()
     m_permissionsDialog.apply();
     m_sessionDialog.apply();
     m_loggingDialog.apply();
+
+    // Write the full PortConfig vector to ServerConfig
+    ServerConfig *srvConfig = m_config->getServerConfig();
+    srvConfig->setAllPortConfigs(m_portConfigs);
   } else {
     return ;
   }
@@ -339,4 +401,71 @@ void ConfigDialog::updateCaption()
                  m_reloadConfigCommand == 0 ? StringTable::getString(IDS_OFFLINE_MODE) : _T(""));
 
   m_ctrlThis.setText(caption.getString());
+}
+
+PortConfig *ConfigDialog::getSelectedPortConfig()
+{
+  if (m_selectedPortIndex >= 0 &&
+      m_selectedPortIndex < (int)m_portConfigs.size()) {
+    return &m_portConfigs[m_selectedPortIndex];
+  }
+  return NULL;
+}
+
+void ConfigDialog::refreshPortSelector()
+{
+  m_portSelector.removeAllItems();
+  for (size_t i = 0; i < m_portConfigs.size(); i++) {
+    StringStorage label;
+    label.format(_T("Port %d"), m_portConfigs[i].getPort());
+    m_portSelector.addItem(label.getString());
+  }
+  if (m_portConfigs.empty()) {
+    m_portSelector.addItem(_T("(no ports)"));
+  }
+  // Clamp selection
+  if (m_selectedPortIndex >= (int)m_portConfigs.size()) {
+    m_selectedPortIndex = m_portConfigs.empty() ? 0 : (int)m_portConfigs.size() - 1;
+  }
+  m_portSelector.setSelectedItem(m_selectedPortIndex);
+}
+
+void ConfigDialog::onPortSelectorChange()
+{
+  // Save current tab state into the old PortConfig
+  saveCurrentPortContext();
+
+  // Switch to newly selected port
+  m_selectedPortIndex = m_portSelector.getSelectedItemIndex();
+  switchPortContext();
+}
+
+void ConfigDialog::switchPortContext()
+{
+  PortConfig *pc = getSelectedPortConfig();
+
+  // Push per-port config to tabs that need it
+  m_authenticationDialog.setPortConfig(pc);
+  m_authenticationDialog.updateUI();
+
+  m_permissionsDialog.setPortConfig(pc);
+  m_permissionsDialog.updateUI();
+
+  m_ipAccessControlDialog.setPortConfig(pc);
+  // IpAccessControlDialog reads container in onInitDialog();
+  // for subsequent port switches, update the container pointer
+  if (pc != NULL) {
+    m_ipAccessControlDialog.updateUI();
+  }
+}
+
+void ConfigDialog::saveCurrentPortContext()
+{
+  PortConfig *pc = getSelectedPortConfig();
+  if (pc == NULL) return;
+
+  // Tell per-port tabs to write their UI state into the PortConfig
+  m_authenticationDialog.apply();
+  m_permissionsDialog.apply();
+  // IP access rules are edited in-place through the IpAccessControl pointer
 }

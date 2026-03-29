@@ -26,7 +26,7 @@ Every VNC port runs as an independent server with its own auth mode, passwords, 
 | 3 | [Configurator load/save per-port config](phase-03-configurator-per-port-storage.md) | **Done** | 2 modified |
 | 4 | [Pass port context through connection pipeline](phase-04-port-context-pipeline.md) | **Done** | 7 modified |
 | 5 | [RfbInitializer uses per-port config](phase-05-per-port-auth-in-initializer.md) | **Done** | 1 modified |
-| 6 | [UI redesign — port list with per-port panels](phase-06-ui-redesign-port-list.md) | Pending | ~10 modified/new |
+| 6 | [UI redesign — port list with per-port panels](phase-06-ui-redesign-port-list.md) | **Done** | 8 modified |
 | 7 | [Migration — old config to per-port format](phase-07-config-migration.md) | **Done** | 2 modified |
 
 ## Key Dependencies
