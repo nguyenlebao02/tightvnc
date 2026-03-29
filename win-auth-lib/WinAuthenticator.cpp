@@ -174,7 +174,11 @@ ClientPermissions WinAuthenticator::resolvePermissions(
   for (size_t r = 0; r < sortedRules.size(); r++) {
     const GroupPermissionRule &rule = sortedRules[r];
     for (size_t g = 0; g < groups.size(); g++) {
-      if (groups[g].isEqualTo(rule.getGroupName().getString())) {
+      // Case-insensitive comparison — Windows group names are case-insensitive
+      const TCHAR *groupName = groups[g].getString();
+      const TCHAR *ruleName = rule.getGroupName().getString();
+      if (groupName != NULL && ruleName != NULL &&
+          _tcsicmp(groupName, ruleName) == 0) {
         return ClientPermissions(rule.getPermissionFlags());
       }
     }

@@ -64,6 +64,17 @@ void WinFilePath::setString(const TCHAR *string)
     if (str.endsWith(_T('\\'))) {
       str.truncate(1);
     }
+
+    // Security: reject path traversal components (..)
+    const TCHAR *p = str.getString();
+    if (p != NULL) {
+      if (_tcscmp(p, _T("..")) == 0 ||
+          _tcsstr(p, _T("..\\")) != NULL ||
+          _tcsstr(p, _T("\\..")) != NULL) {
+        StringStorage::setString(_T(""));
+        return;
+      }
+    }
   }
   StringStorage::setString(str.getString());
 }

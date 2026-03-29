@@ -931,6 +931,10 @@ bool Configurator::loadWinAuthConfig(SettingsManager *sm, ServerConfig *config)
     loadResult = false;
   } else {
     m_isConfigLoadedPartly = true;
+    // Validate AuthMode range: 0=VNC_ONLY, 1=WINDOWS_ONLY, 2=BOTH
+    if (uintVal > 2) {
+      uintVal = 0;  // Default to AUTH_VNC_ONLY for safety
+    }
     config->setAuthMode((ServerConfig::AuthMode)uintVal);
   }
 

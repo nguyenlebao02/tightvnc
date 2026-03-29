@@ -193,10 +193,19 @@ bool IniFileSettingsManager::getBinaryData(const TCHAR *name, void *value, size_
 
 	if (buffer.getLength() == 0) return false;
 
-	const TCHAR *str =buffer.getString();
+	const TCHAR *str = buffer.getString();
 	size_t j = buffer.getLength();
-	BYTE ASCII;
+	BYTE ASCII = 0;
 	BYTE *ret_value = (BYTE *)value;
+
+	// Reject odd-length hex strings (each byte = 2 hex chars)
+	if (j & 1) return false;
+
+	// Clamp to buffer capacity to prevent overflow
+	size_t maxBytes = *size;
+	if (j / 2 > maxBytes) {
+		j = maxBytes * 2;
+	}
 
 	for (size_t i = 0; i < j; ++i) {
 		BYTE tmp;
@@ -212,17 +221,15 @@ bool IniFileSettingsManager::getBinaryData(const TCHAR *name, void *value, size_
 		else {
 			return false;
 		}
-		if (i & 1){		
+		if (i & 1) {
 			ASCII += tmp;
-			size_t n = i / 2;
-			ret_value[n] = ASCII;
-			if (n >= *size)
-				break;
+			ret_value[i / 2] = ASCII;
 		}
 		else {
 			ASCII = tmp << 4;
 		}
 	}
+	*size = j / 2;
 	return true;
 }
 

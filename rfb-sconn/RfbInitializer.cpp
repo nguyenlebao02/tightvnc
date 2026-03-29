@@ -36,7 +36,7 @@
 #include "win-auth-lib/WinAuthenticator.h"
 
 #include <stdlib.h>
-#include <time.h>
+#include <wincrypt.h>
 #include <vector>
 
 RfbInitializer::RfbInitializer(Channel *stream,
@@ -142,14 +142,21 @@ void RfbInitializer::doTightAuth()
     CapContainer authInfo;
 
     // Offer auth types based on configured auth mode
-    if (authMode == ServerConfig::AUTH_VNC_ONLY ||
-        authMode == ServerConfig::AUTH_BOTH) {
+    // Only add VNC cap if a password is actually set
+    if ((authMode == ServerConfig::AUTH_VNC_ONLY ||
+         authMode == ServerConfig::AUTH_BOTH) &&
+        (srvConf->hasPrimaryPassword() || srvConf->hasReadOnlyPassword())) {
       authInfo.addCap(AuthDefs::VNC, VendorDefs::STANDARD, AuthDefs::SIG_VNC);
     }
     if (authMode == ServerConfig::AUTH_WINDOWS_ONLY ||
         authMode == ServerConfig::AUTH_BOTH) {
       authInfo.addCap(AuthDefs::EXTERNAL, VendorDefs::TIGHTVNC,
                       AuthDefs::SIG_EXTERNAL);
+    }
+
+    // Safety: reject if no auth methods available (e.g. VNC-only with no password)
+    if (authInfo.getCapCount() == 0) {
+      throw Exception(_T("Server auth misconfiguration: no auth methods available"));
     }
 
     m_output->writeUInt32(authInfo.getCapCount());
@@ -160,6 +167,30 @@ void RfbInitializer::doTightAuth()
       throw Exception(_T("Client selected unsupported auth type"));
     }
     doAuth(clientAuthValue);
+  } else if (authMode == ServerConfig::AUTH_WINDOWS_ONLY ||
+             authMode == ServerConfig::AUTH_BOTH) {
+    // Windows auth configured but isUsingAuthentication() returned false —
+    // still enforce Windows auth regardless of VNC password flag
+    if (m_authAllowed) {
+      CapContainer authInfo;
+      authInfo.addCap(AuthDefs::EXTERNAL, VendorDefs::TIGHTVNC,
+                      AuthDefs::SIG_EXTERNAL);
+      m_output->writeUInt32(authInfo.getCapCount());
+      authInfo.sendCaps(m_output);
+      UINT32 clientAuthValue = m_input->readUInt32();
+      if (!authInfo.includes(clientAuthValue)) {
+        throw Exception(_T("Client selected unsupported auth type"));
+      }
+      doAuth(clientAuthValue);
+    } else {
+      // Loopback exemption
+      m_output->writeUInt32(0);
+      doAuth(AuthDefs::NONE);
+    }
+  } else if (!m_authAllowed) {
+    // Auth not allowed for this connection (e.g., loopback exception)
+    m_output->writeUInt32(0);
+    doAuth(AuthDefs::NONE);
   } else {
     m_output->writeUInt32(0);
     doAuth(AuthDefs::NONE);
@@ -188,10 +219,17 @@ void RfbInitializer::doAuth(UINT32 authType)
 void RfbInitializer::doVncAuth()
 {
   UINT8 challenge[16];
-  srand((unsigned)time(0));
-  for (int i = 0; i < sizeof(challenge); i++) {
-    challenge[i] = rand() & 0xff;
+  // Use cryptographically secure random for auth challenge
+  HCRYPTPROV hProv = 0;
+  if (!CryptAcquireContext(&hProv, NULL, NULL, PROV_RSA_FULL,
+                           CRYPT_VERIFYCONTEXT)) {
+    throw Exception(_T("Failed to acquire crypto context for challenge generation"));
   }
+  if (!CryptGenRandom(hProv, sizeof(challenge), challenge)) {
+    CryptReleaseContext(hProv, 0);
+    throw Exception(_T("Failed to generate random challenge"));
+  }
+  CryptReleaseContext(hProv, 0);
 
   m_output->writeFully(challenge, sizeof(challenge));
   UINT8 response[16];
@@ -348,9 +386,22 @@ void RfbInitializer::initAuthenticate()
   try {
     // Determine effective security type from the configuration.
     UINT32 primSecType = SecurityDefs::VNC;
-    if (!Configurator::getInstance()->getServerConfig()->isUsingAuthentication()
-        || !m_authAllowed) {
+    ServerConfig *srvConf = Configurator::getInstance()->getServerConfig();
+    ServerConfig::AuthMode authMode = srvConf->getAuthMode();
+    if (!m_authAllowed) {
       primSecType = SecurityDefs::NONE;
+    } else if (!srvConf->isUsingAuthentication()) {
+      // VNC password auth disabled — check if Windows auth is configured
+      if (authMode == ServerConfig::AUTH_WINDOWS_ONLY ||
+          authMode == ServerConfig::AUTH_BOTH) {
+        // Windows auth configured: force TIGHT security type so client
+        // goes through doTightAuth() where EXTERNAL auth is offered.
+        // For non-TIGHT-capable clients, VNC security type triggers
+        // doVncAuth() which requires a password — correctly rejected.
+        primSecType = SecurityDefs::VNC;
+      } else {
+        primSecType = SecurityDefs::NONE;
+      }
     }
     // Here the protocol varies between versions 3.3 and 3.7+.
     if (m_minorVerNum >= 7) {

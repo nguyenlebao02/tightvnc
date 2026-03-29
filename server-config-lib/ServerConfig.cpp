@@ -32,7 +32,7 @@
 
 ServerConfig::ServerConfig()
 : m_rfbPort(5900), m_httpPort(5800),
-  m_disconnectAction(DA_DO_NOTHING), m_logLevel(0), m_useControlAuth(false),
+  m_disconnectAction(DA_DO_NOTHING), m_logLevel(0), m_useControlAuth(true),
   m_controlAuthAlwaysChecking(false),
   m_acceptRfbConnections(true), m_useAuthentication(true),
   m_onlyLoopbackConnections(false), m_acceptHttpConnections(false),

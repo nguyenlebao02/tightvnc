@@ -40,7 +40,7 @@
 
 #include "tvnserver/resource.h"
 
-#include <time.h>
+#include <wincrypt.h>
 #include "util/AnsiStringStorage.h"
 #include "util/MemUsage.h"
 
@@ -253,10 +253,17 @@ void ControlClient::authMsgRcdv()
   UINT8 challenge[16];
   UINT8 response[16];
 
-  srand((unsigned)time(0));
-  for (int i = 0; i < sizeof(challenge); i++) {
-    challenge[i] = rand() & 0xff;
+  // Use cryptographically secure random for control auth challenge
+  HCRYPTPROV hProv = 0;
+  if (!CryptAcquireContext(&hProv, NULL, NULL, PROV_RSA_FULL,
+                           CRYPT_VERIFYCONTEXT)) {
+    throw Exception(_T("Failed to acquire crypto context for challenge generation"));
   }
+  if (!CryptGenRandom(hProv, sizeof(challenge), challenge)) {
+    CryptReleaseContext(hProv, 0);
+    throw Exception(_T("Failed to generate random challenge"));
+  }
+  CryptReleaseContext(hProv, 0);
 
   m_gate->writeFully(challenge, sizeof(challenge));
   m_gate->readFully(response, sizeof(response));
