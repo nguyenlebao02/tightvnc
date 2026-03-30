@@ -214,6 +214,7 @@ void RfbClient::execute()
       } else {
         // Loopback / no-auth — full control
         m_viewOnlyAuth = false;
+        m_permissions = ClientPermissions(ClientPermissions::PERM_FULL_CONTROL);
       }
 
       // Let RfbClientManager handle new authenticated connection.

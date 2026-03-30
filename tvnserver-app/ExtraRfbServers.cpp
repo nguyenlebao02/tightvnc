@@ -155,7 +155,7 @@ bool ExtraRfbServers::startUp(bool asService, RfbClientManager *mgr)
       m_log->detail(_T("Starting RFB server at port %d"), port);
       try {
         RfbServer *s = new RfbServer(bindHost, port, mgr, asService,
-                                     m_log, &rect);
+                                     m_log, &rect, &pc);
         m_servers.push_back(s);
         m_log->message(_T("Started RFB server at port %d"), port);
       } catch (Exception &ex) {
@@ -164,7 +164,7 @@ bool ExtraRfbServers::startUp(bool asService, RfbClientManager *mgr)
       }
     }
   } else {
-    // Legacy path: use extraPorts
+    // Legacy path: use extraPorts (no per-port config — use defaults)
     expectedCount = newConf.extraPorts.count();
     for (size_t i = 0; i < newConf.extraPorts.count(); i++) {
       PortMapping pm = *newConf.extraPorts.at(i);

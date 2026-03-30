@@ -384,7 +384,9 @@ void TvnServer::restartMainRfbServer()
   m_log.message(_T("Starting main RFB server"));
 
   try {
-    m_rfbServer = new RfbServer(bindHost, bindPort, m_rfbClientManager, m_runAsService, &m_log);
+    PortConfig mainPortConfig = m_srvConfig->getPortConfigByPort(bindPort);
+    m_rfbServer = new RfbServer(bindHost, bindPort, m_rfbClientManager,
+                                m_runAsService, &m_log, 0, &mainPortConfig);
   } catch (Exception &ex) {
     m_log.error(_T("Failed to start main RFB server: \"%s\""), ex.getMessage());
   }
