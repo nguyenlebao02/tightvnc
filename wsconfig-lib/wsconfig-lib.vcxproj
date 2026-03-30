@@ -392,47 +392,40 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="AdministrationConfigDialog.cpp" />
-    <ClCompile Include="AuthenticationConfigDialog.cpp" />
     <ClCompile Include="DisplayInputConfigDialog.cpp" />
     <ClCompile Include="PermissionsConfigDialog.cpp" />
+    <ClCompile Include="PortSettingsConfigDialog.cpp" />
+    <ClCompile Include="PortSettingsPermissions.cpp" />
     <ClCompile Include="ConnectionConfigDialog.cpp" />
     <ClCompile Include="LoggingConfigDialog.cpp" />
     <ClCompile Include="SessionConfigDialog.cpp" />
     <ClCompile Include="ChangePasswordDialog.cpp" />
     <ClCompile Include="CommonInputValidation.cpp" />
     <ClCompile Include="ConfigDialog.cpp" />
-    <ClCompile Include="EditIpAccessRuleDialog.cpp" />
     <ClCompile Include="EditPortMappingDialog.cpp" />
-    <ClCompile Include="IpAccessControlDialog.cpp" />
     <ClCompile Include="PasswordControl.cpp" />
     <ClCompile Include="PortMappingDialog.cpp" />
-    <ClCompile Include="ServerConfigDialog.cpp" />
     <ClCompile Include="TvnLogFilename.cpp" />
     <ClCompile Include="UIDataAccess.cpp" />
     <ClCompile Include="VideoRegionsConfigDialog.cpp" />
-    <ClCompile Include="WinAuthConfigDialog.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="AdministrationConfigDialog.h" />
-    <ClInclude Include="AuthenticationConfigDialog.h" />
     <ClInclude Include="DisplayInputConfigDialog.h" />
     <ClInclude Include="PermissionsConfigDialog.h" />
+    <ClInclude Include="PortSettingsConfigDialog.h" />
     <ClInclude Include="ConnectionConfigDialog.h" />
     <ClInclude Include="LoggingConfigDialog.h" />
     <ClInclude Include="SessionConfigDialog.h" />
     <ClInclude Include="ChangePasswordDialog.h" />
     <ClInclude Include="CommonInputValidation.h" />
     <ClInclude Include="ConfigDialog.h" />
-    <ClInclude Include="EditIpAccessRuleDialog.h" />
     <ClInclude Include="EditPortMappingDialog.h" />
-    <ClInclude Include="IpAccessControlDialog.h" />
     <ClInclude Include="PasswordControl.h" />
     <ClInclude Include="PortMappingDialog.h" />
-    <ClInclude Include="ServerConfigDialog.h" />
     <ClInclude Include="TvnLogFilename.h" />
     <ClInclude Include="UIDataAccess.h" />
     <ClInclude Include="VideoRegionsConfigDialog.h" />
-    <ClInclude Include="WinAuthConfigDialog.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

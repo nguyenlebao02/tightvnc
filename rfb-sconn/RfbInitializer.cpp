@@ -29,14 +29,12 @@
 #include "CapContainer.h"
 #include "server-config-lib/Configurator.h"
 #include "AuthException.h"
-#include "util/VncPassCrypt.h"
 #include "win-system/Environment.h"
 #include "util/AnsiStringStorage.h"
 #include "tvnserver-app/NamingDefs.h"
 #include "win-auth-lib/WinAuthenticator.h"
 
 #include <stdlib.h>
-#include <wincrypt.h>
 #include <vector>
 
 RfbInitializer::RfbInitializer(Channel *stream,
@@ -136,29 +134,12 @@ void RfbInitializer::doTightAuth()
 {
   // Negotiate tunneling.
   m_output->writeUInt32(0);
-  // Negotiate authentication using per-port config.
-  int authMode = m_portConfig.getAuthMode();
 
-  if (m_portConfig.isUsingAuthentication() && m_authAllowed) {
+  // Only Windows (EXTERNAL) authentication is supported.
+  if (m_authAllowed) {
     CapContainer authInfo;
-
-    // Offer auth types based on per-port auth mode
-    // Only add VNC cap if a password is actually set
-    if ((authMode == ServerConfig::AUTH_VNC_ONLY ||
-         authMode == ServerConfig::AUTH_BOTH) &&
-        (m_portConfig.hasPrimaryPassword() || m_portConfig.hasReadOnlyPassword())) {
-      authInfo.addCap(AuthDefs::VNC, VendorDefs::STANDARD, AuthDefs::SIG_VNC);
-    }
-    if (authMode == ServerConfig::AUTH_WINDOWS_ONLY ||
-        authMode == ServerConfig::AUTH_BOTH) {
-      authInfo.addCap(AuthDefs::EXTERNAL, VendorDefs::TIGHTVNC,
-                      AuthDefs::SIG_EXTERNAL);
-    }
-
-    // Safety: reject if no auth methods available (e.g. VNC-only with no password)
-    if (authInfo.getCapCount() == 0) {
-      throw Exception(_T("Server auth misconfiguration: no auth methods available"));
-    }
+    authInfo.addCap(AuthDefs::EXTERNAL, VendorDefs::TIGHTVNC,
+                    AuthDefs::SIG_EXTERNAL);
 
     m_output->writeUInt32(authInfo.getCapCount());
     authInfo.sendCaps(m_output);
@@ -168,31 +149,8 @@ void RfbInitializer::doTightAuth()
       throw Exception(_T("Client selected unsupported auth type"));
     }
     doAuth(clientAuthValue);
-  } else if (authMode == ServerConfig::AUTH_WINDOWS_ONLY ||
-             authMode == ServerConfig::AUTH_BOTH) {
-    // Windows auth configured but isUsingAuthentication() returned false —
-    // still enforce Windows auth regardless of VNC password flag
-    if (m_authAllowed) {
-      CapContainer authInfo;
-      authInfo.addCap(AuthDefs::EXTERNAL, VendorDefs::TIGHTVNC,
-                      AuthDefs::SIG_EXTERNAL);
-      m_output->writeUInt32(authInfo.getCapCount());
-      authInfo.sendCaps(m_output);
-      UINT32 clientAuthValue = m_input->readUInt32();
-      if (!authInfo.includes(clientAuthValue)) {
-        throw Exception(_T("Client selected unsupported auth type"));
-      }
-      doAuth(clientAuthValue);
-    } else {
-      // Loopback exemption
-      m_output->writeUInt32(0);
-      doAuth(AuthDefs::NONE);
-    }
-  } else if (!m_authAllowed) {
-    // Auth not allowed for this connection (e.g., loopback exception)
-    m_output->writeUInt32(0);
-    doAuth(AuthDefs::NONE);
   } else {
+    // Auth not allowed for this connection (e.g., loopback exception)
     m_output->writeUInt32(0);
     doAuth(AuthDefs::NONE);
   }
@@ -200,9 +158,7 @@ void RfbInitializer::doTightAuth()
 
 void RfbInitializer::doAuth(UINT32 authType)
 {
-  if (authType == AuthDefs::VNC) {
-    doVncAuth();
-  } else if (authType == AuthDefs::EXTERNAL) {
+  if (authType == AuthDefs::EXTERNAL) {
     doWinAuth();
   } else if (authType == AuthDefs::NONE) {
     doAuthNone();
@@ -215,65 +171,6 @@ void RfbInitializer::doAuth(UINT32 authType)
   if (m_minorVerNum >= 8 || authType != AuthDefs::NONE) {
     m_output->writeUInt32(0); // FIXME: Use a named constant instead of 0.
   }
-}
-
-void RfbInitializer::doVncAuth()
-{
-  UINT8 challenge[16];
-  // Use cryptographically secure random for auth challenge
-  HCRYPTPROV hProv = 0;
-  if (!CryptAcquireContext(&hProv, NULL, NULL, PROV_RSA_FULL,
-                           CRYPT_VERIFYCONTEXT)) {
-    throw Exception(_T("Failed to acquire crypto context for challenge generation"));
-  }
-  if (!CryptGenRandom(hProv, sizeof(challenge), challenge)) {
-    CryptReleaseContext(hProv, 0);
-    throw Exception(_T("Failed to generate random challenge"));
-  }
-  CryptReleaseContext(hProv, 0);
-
-  m_output->writeFully(challenge, sizeof(challenge));
-  UINT8 response[16];
-  m_input->readFully(response, sizeof(response));
-  // Checking for a ban after auth.
-  checkForBan();
-
-  // Comparing the challenge with the response using per-port passwords.
-  bool hasPrim = m_portConfig.hasPrimaryPassword();
-  bool hasRdly = m_portConfig.hasReadOnlyPassword();
-
-  if (!hasPrim && !hasRdly) {
-    throw AuthException(_T("Server is not configured properly"));
-  }
-
-  if (hasPrim) {
-    UINT8 crypPrimPass[8];
-    m_portConfig.getPrimaryPassword(crypPrimPass);
-    VncPassCrypt passCrypt;
-    passCrypt.updatePlain(crypPrimPass);
-    if (passCrypt.challengeAndResponseIsValid(challenge, response)) {
-      return;
-    }
-  }
-  if (hasRdly) {
-    UINT8 crypReadOnlyPass[8];
-    m_portConfig.getReadOnlyPassword(crypReadOnlyPass);
-    VncPassCrypt passCrypt;
-    passCrypt.updatePlain(crypReadOnlyPass);
-    if (passCrypt.challengeAndResponseIsValid(challenge, response)) {
-      m_viewOnlyAuth = true;
-      return;
-    }
-  }
-  // At this time we are sure that the client was typed an incorectly password.
-  m_extAuthListener->onAuthFailed(m_client);
-
-  StringStorage clientAddressStorage;
-  m_client->getPeerHost(&clientAddressStorage);
-  StringStorage errMess;
-  errMess.format(_T("Authentication failed from %s"), clientAddressStorage.getString());
-
-  throw AuthException(errMess.getString());
 }
 
 void RfbInitializer::doAuthNone()
@@ -375,6 +272,7 @@ void RfbInitializer::doWinAuth()
   // Auth succeeded — store permissions and mark as Windows auth
   m_winAuthUsed = true;
   m_clientPermissions = result.permissions;
+  m_authenticatedUsername = username;  // Store full DOMAIN\user form
 
   // Set view-only flag for backward compatibility
   m_viewOnlyAuth = m_clientPermissions.isViewOnly();
@@ -383,23 +281,11 @@ void RfbInitializer::doWinAuth()
 void RfbInitializer::initAuthenticate()
 {
   try {
-    // Determine effective security type from per-port configuration.
+    // Determine effective security type — always VNC type (which routes to
+    // doTightAuth() for TIGHT-capable clients where Windows auth is offered).
     UINT32 primSecType = SecurityDefs::VNC;
-    int authMode = m_portConfig.getAuthMode();
     if (!m_authAllowed) {
       primSecType = SecurityDefs::NONE;
-    } else if (!m_portConfig.isUsingAuthentication()) {
-      // VNC password auth disabled — check if Windows auth is configured
-      if (authMode == ServerConfig::AUTH_WINDOWS_ONLY ||
-          authMode == ServerConfig::AUTH_BOTH) {
-        // Windows auth configured: force TIGHT security type so client
-        // goes through doTightAuth() where EXTERNAL auth is offered.
-        // For non-TIGHT-capable clients, VNC security type triggers
-        // doVncAuth() which requires a password — correctly rejected.
-        primSecType = SecurityDefs::VNC;
-      } else {
-        primSecType = SecurityDefs::NONE;
-      }
     }
     // Here the protocol varies between versions 3.3 and 3.7+.
     if (m_minorVerNum >= 7) {

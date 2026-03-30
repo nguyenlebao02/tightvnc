@@ -30,24 +30,42 @@
 #include "UIDataAccess.h"
 #include "server-config-lib/Configurator.h"
 #include "util/StringParser.h"
+#include "win-system/WindowsDisplays.h"
+
+// Resolve a devicePath to a human-readable monitor label.
+// Returns e.g. "Display 1 (1920x1080)" or "All Displays" if empty.
+static void resolveMonitorLabel(const TCHAR *devicePath,
+                                StringStorage *label)
+{
+  if (devicePath == NULL || devicePath[0] == _T('\0')) {
+    label->setString(_T("All Displays"));
+    return;
+  }
+
+  WindowsDisplays displays;
+  std::vector<DisplayInfo> infos = displays.getDisplayInfos();
+
+  for (size_t i = 0; i < infos.size(); i++) {
+    if (_tcsicmp(devicePath, infos[i].devicePath.getString()) == 0) {
+      label->format(_T("Display %d (%dx%d)"),
+                    infos[i].displayNumber,
+                    infos[i].rect.getWidth(),
+                    infos[i].rect.getHeight());
+      return;
+    }
+  }
+  // Fallback: device not currently connected
+  label->format(_T("[%s]"), devicePath);
+}
 
 // Build a human-readable display string for a port mapping entry.
-// Format: ":port  rect  [device]" or ":port  rect"
+// Format: ":port  Monitor Label"
 static void buildDisplayString(const PortMapping *pm, StringStorage *out)
 {
-  StringStorage rectStr;
-  pm->getRect().toString(&rectStr);
+  StringStorage monLabel;
+  resolveMonitorLabel(pm->getDevicePath().getString(), &monLabel);
 
-  const StringStorage &devPath = pm->getDevicePath();
-  bool hasDevice = (devPath.getLength() > 0);
-
-  if (hasDevice) {
-    out->format(_T(":%d  %s  [%s]"),
-                pm->getPort(), rectStr.getString(), devPath.getString());
-  } else {
-    out->format(_T(":%d  %s"),
-                pm->getPort(), rectStr.getString());
-  }
+  out->format(_T(":%d  %s"), pm->getPort(), monLabel.getString());
 }
 
 ConnectionConfigDialog::ConnectionConfigDialog()
@@ -103,21 +121,13 @@ void ConnectionConfigDialog::initControls()
 }
 
 // Build a display string for a PortConfig entry in the listbox.
+// Format: ":port  Monitor Label"
 static void buildPortConfigDisplayString(const PortConfig *pc, StringStorage *out)
 {
-  StringStorage rectStr;
-  pc->getRect().toString(&rectStr);
+  StringStorage monLabel;
+  resolveMonitorLabel(pc->getDevicePath().getString(), &monLabel);
 
-  const StringStorage &devPath = pc->getDevicePath();
-  bool hasDevice = (devPath.getLength() > 0);
-
-  if (hasDevice) {
-    out->format(_T(":%d  %s  [%s]"),
-                pc->getPort(), rectStr.getString(), devPath.getString());
-  } else {
-    out->format(_T(":%d  %s"),
-                pc->getPort(), rectStr.getString());
-  }
+  out->format(_T(":%d  %s"), pc->getPort(), monLabel.getString());
 }
 
 void ConnectionConfigDialog::updateUI()
@@ -324,19 +334,9 @@ void ConnectionConfigDialog::onAddButtonClick()
       // Inherit auth from first port if available
       if (!m_portConfigs->empty()) {
         PortConfig &first = (*m_portConfigs)[0];
-        newPC.setAuthMode(first.getAuthMode());
-        newPC.setUseAuthentication(first.isUsingAuthentication());
         newPC.setDefaultWinAuthPermissions(first.getDefaultWinAuthPermissions());
-        if (first.hasPrimaryPassword()) {
-          unsigned char pass[PortConfig::VNC_PASSWORD_SIZE];
-          first.getPrimaryPassword(pass);
-          newPC.setPrimaryPassword(pass);
-        }
-        if (first.hasReadOnlyPassword()) {
-          unsigned char pass[PortConfig::VNC_PASSWORD_SIZE];
-          first.getReadOnlyPassword(pass);
-          newPC.setReadOnlyPassword(pass);
-        }
+        newPC.setGroupRules(first.getGroupRules());
+        newPC.setMaxConnectionsPerUser(first.getMaxConnectionsPerUser());
       }
       m_portConfigs->push_back(newPC);
       StringStorage mappingString;

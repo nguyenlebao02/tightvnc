@@ -28,30 +28,19 @@
 
 PortConfig::PortConfig()
 : m_port(0),
-  m_authMode(AUTH_VNC_ONLY),
-  m_hasPrimaryPassword(false),
-  m_hasReadonlyPassword(false),
-  m_useAuthentication(true),
-  m_defaultWinAuthPermissions(ClientPermissions::PERM_VIEW_ONLY)
+  m_defaultWinAuthPermissions(ClientPermissions::PERM_VIEW_ONLY),
+  m_maxConnectionsPerUser(0)
 {
-  memset(m_primaryPassword, 0, VNC_PASSWORD_SIZE);
-  memset(m_readonlyPassword, 0, VNC_PASSWORD_SIZE);
 }
 
 PortConfig::PortConfig(const PortConfig &other)
 : m_port(other.m_port),
   m_rect(other.m_rect),
   m_devicePath(other.m_devicePath),
-  m_authMode(other.m_authMode),
-  m_hasPrimaryPassword(other.m_hasPrimaryPassword),
-  m_hasReadonlyPassword(other.m_hasReadonlyPassword),
-  m_useAuthentication(other.m_useAuthentication),
   m_groupRules(other.m_groupRules),
   m_defaultWinAuthPermissions(other.m_defaultWinAuthPermissions),
-  m_ipAccessRules(other.m_ipAccessRules)
+  m_maxConnectionsPerUser(other.m_maxConnectionsPerUser)
 {
-  memcpy(m_primaryPassword, other.m_primaryPassword, VNC_PASSWORD_SIZE);
-  memcpy(m_readonlyPassword, other.m_readonlyPassword, VNC_PASSWORD_SIZE);
 }
 
 PortConfig &PortConfig::operator=(const PortConfig &other)
@@ -60,15 +49,9 @@ PortConfig &PortConfig::operator=(const PortConfig &other)
     m_port = other.m_port;
     m_rect = other.m_rect;
     m_devicePath = other.m_devicePath;
-    m_authMode = other.m_authMode;
-    memcpy(m_primaryPassword, other.m_primaryPassword, VNC_PASSWORD_SIZE);
-    memcpy(m_readonlyPassword, other.m_readonlyPassword, VNC_PASSWORD_SIZE);
-    m_hasPrimaryPassword = other.m_hasPrimaryPassword;
-    m_hasReadonlyPassword = other.m_hasReadonlyPassword;
-    m_useAuthentication = other.m_useAuthentication;
     m_groupRules = other.m_groupRules;
     m_defaultWinAuthPermissions = other.m_defaultWinAuthPermissions;
-    m_ipAccessRules = other.m_ipAccessRules;
+    m_maxConnectionsPerUser = other.m_maxConnectionsPerUser;
   }
   return *this;
 }
@@ -83,14 +66,6 @@ bool PortConfig::isEqualTo(const PortConfig *other) const
   if (!other->m_rect.isEqualTo(&m_rect)) return false;
   if (_tcsicmp(other->m_devicePath.getString(),
                m_devicePath.getString()) != 0) return false;
-  if (other->m_authMode != m_authMode) return false;
-  if (other->m_hasPrimaryPassword != m_hasPrimaryPassword) return false;
-  if (other->m_hasReadonlyPassword != m_hasReadonlyPassword) return false;
-  if (other->m_useAuthentication != m_useAuthentication) return false;
-  if (memcmp(other->m_primaryPassword, m_primaryPassword,
-             VNC_PASSWORD_SIZE) != 0) return false;
-  if (memcmp(other->m_readonlyPassword, m_readonlyPassword,
-             VNC_PASSWORD_SIZE) != 0) return false;
   if (other->m_defaultWinAuthPermissions !=
       m_defaultWinAuthPermissions) return false;
   // Compare group rules
@@ -104,8 +79,7 @@ bool PortConfig::isEqualTo(const PortConfig *other) const
                  other->m_groupRules[i].getGroupName().getString()) != 0)
       return false;
   }
-  // Note: IpAccessControl comparison skipped (pointer-based vector,
-  // will be added when deep comparison is needed in later phases)
+  if (other->m_maxConnectionsPerUser != m_maxConnectionsPerUser) return false;
   return true;
 }
 
@@ -119,54 +93,6 @@ void PortConfig::setRect(PortMappingRect rect) { m_rect = rect; }
 
 const StringStorage &PortConfig::getDevicePath() const { return m_devicePath; }
 void PortConfig::setDevicePath(const TCHAR *path) { m_devicePath.setString(path); }
-
-// --- Auth mode ---
-
-int PortConfig::getAuthMode() const { return m_authMode; }
-void PortConfig::setAuthMode(int mode) { m_authMode = mode; }
-
-// --- VNC passwords ---
-
-void PortConfig::getPrimaryPassword(unsigned char *out) const
-{
-  memcpy(out, m_primaryPassword, VNC_PASSWORD_SIZE);
-}
-
-void PortConfig::setPrimaryPassword(const unsigned char *value)
-{
-  memcpy(m_primaryPassword, value, VNC_PASSWORD_SIZE);
-  m_hasPrimaryPassword = true;
-}
-
-bool PortConfig::hasPrimaryPassword() const { return m_hasPrimaryPassword; }
-
-void PortConfig::deletePrimaryPassword()
-{
-  memset(m_primaryPassword, 0, VNC_PASSWORD_SIZE);
-  m_hasPrimaryPassword = false;
-}
-
-void PortConfig::getReadOnlyPassword(unsigned char *out) const
-{
-  memcpy(out, m_readonlyPassword, VNC_PASSWORD_SIZE);
-}
-
-void PortConfig::setReadOnlyPassword(const unsigned char *value)
-{
-  memcpy(m_readonlyPassword, value, VNC_PASSWORD_SIZE);
-  m_hasReadonlyPassword = true;
-}
-
-bool PortConfig::hasReadOnlyPassword() const { return m_hasReadonlyPassword; }
-
-void PortConfig::deleteReadOnlyPassword()
-{
-  memset(m_readonlyPassword, 0, VNC_PASSWORD_SIZE);
-  m_hasReadonlyPassword = false;
-}
-
-bool PortConfig::isUsingAuthentication() const { return m_useAuthentication; }
-void PortConfig::setUseAuthentication(bool use) { m_useAuthentication = use; }
 
 // --- Windows auth group rules ---
 
@@ -190,10 +116,10 @@ void PortConfig::setDefaultWinAuthPermissions(UINT32 perms)
   m_defaultWinAuthPermissions = perms;
 }
 
-// --- IP access control ---
+// --- Max connections per user ---
 
-IpAccessControl *PortConfig::getIpAccessControl() { return &m_ipAccessRules; }
-const IpAccessControl *PortConfig::getIpAccessControl() const { return &m_ipAccessRules; }
+int PortConfig::getMaxConnectionsPerUser() const { return m_maxConnectionsPerUser; }
+void PortConfig::setMaxConnectionsPerUser(int maxConn) { m_maxConnectionsPerUser = maxConn; }
 
 // --- Legacy PortMapping conversion ---
 

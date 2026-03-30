@@ -22,9 +22,11 @@
 //-------------------------------------------------------------------------
 //
 
+// PortSettingsConfigDialog — Group permission rules methods.
+// Split from PortSettingsConfigDialog.cpp for file size management.
+
 #include "tvnserver/resource.h"
-#include "PermissionsConfigDialog.h"
-#include "WinAuthResourceIds.h"
+#include "PortSettingsConfigDialog.h"
 #include "ConfigDialog.h"
 #include "server-config-lib/ClientPermissions.h"
 
@@ -34,84 +36,7 @@
 #pragma comment(lib, "ole32.lib")
 #pragma comment(lib, "oleaut32.lib")
 
-PermissionsConfigDialog::PermissionsConfigDialog()
-: BaseDialog(IDD_CONFIG_PERMISSIONS_PAGE),
-  m_parentDialog(NULL),
-  m_config(NULL),
-  m_portConfig(NULL)
-{
-}
-
-PermissionsConfigDialog::~PermissionsConfigDialog()
-{
-}
-
-void PermissionsConfigDialog::setParentDialog(BaseDialog *dialog)
-{
-  m_parentDialog = dialog;
-}
-
-BOOL PermissionsConfigDialog::onInitDialog()
-{
-  m_config = Configurator::getInstance()->getServerConfig();
-  initControls();
-  updateUI();
-  return TRUE;
-}
-
-void PermissionsConfigDialog::initControls()
-{
-  HWND hwnd = m_ctrlThis.getWindow();
-
-  m_ruleList.setWindow(GetDlgItem(hwnd, IDC_GROUP_LIST));
-  m_groupNameEdit.setWindow(GetDlgItem(hwnd, IDC_GROUP_NAME_EDIT));
-  m_permissionCombo.setWindow(GetDlgItem(hwnd, IDC_PERMISSION_COMBO));
-  m_priorityEdit.setWindow(GetDlgItem(hwnd, IDC_PRIORITY_EDIT));
-  m_prioritySpin.setWindow(GetDlgItem(hwnd, IDC_PRIORITY_SPIN));
-  m_addButton.setWindow(GetDlgItem(hwnd, IDC_ADD_RULE_BUTTON));
-  m_editButton.setWindow(GetDlgItem(hwnd, IDC_EDIT_RULE_BUTTON));
-  m_removeButton.setWindow(GetDlgItem(hwnd, IDC_REMOVE_RULE_BUTTON));
-  m_moveUpButton.setWindow(GetDlgItem(hwnd, IDC_MOVE_UP_RULE_BUTTON));
-  m_moveDownButton.setWindow(GetDlgItem(hwnd, IDC_MOVE_DOWN_RULE_BUTTON));
-  m_browseButton.setWindow(GetDlgItem(hwnd, IDC_BROWSE_GROUPS_BUTTON));
-
-  // Populate permission combo: Full Control / View Only / View+Clipboard / Deny
-  SendMessage(m_permissionCombo.getWindow(), CB_ADDSTRING, 0,
-              (LPARAM)_T("Full Control"));
-  SendMessage(m_permissionCombo.getWindow(), CB_ADDSTRING, 0,
-              (LPARAM)_T("View Only"));
-  SendMessage(m_permissionCombo.getWindow(), CB_ADDSTRING, 0,
-              (LPARAM)_T("View + Clipboard"));
-  SendMessage(m_permissionCombo.getWindow(), CB_ADDSTRING, 0,
-              (LPARAM)_T("Deny Access"));
-  // Default selection: Full Control
-  SendMessage(m_permissionCombo.getWindow(), CB_SETCURSEL, 0, 0);
-
-  // Priority spin: range 0-100, step 1
-  m_prioritySpin.setRange(0, 100);
-  m_prioritySpin.setAccel(0, 1);
-
-  // ListView columns: Group Name / Permission / Priority
-  m_ruleList.addColumn(0, _T("Group Name"), 200);
-  m_ruleList.addColumn(1, _T("Permission"), 120);
-  m_ruleList.addColumn(2, _T("Priority"),    60);
-}
-
-void PermissionsConfigDialog::updateUI()
-{
-  if (m_config == NULL) return;
-
-  // Load group rules from per-port config if available, else global
-  if (m_portConfig != NULL) {
-    m_rules = m_portConfig->getGroupRules();
-  } else {
-    m_rules = m_config->getGroupRules();
-  }
-  refreshGroupList();
-  updateButtonsState();
-}
-
-void PermissionsConfigDialog::refreshGroupList()
+void PortSettingsConfigDialog::refreshGroupList()
 {
   m_ruleList.clear();
   for (size_t i = 0; i < m_rules.size(); i++) {
@@ -120,8 +45,8 @@ void PermissionsConfigDialog::refreshGroupList()
   }
 }
 
-void PermissionsConfigDialog::setListViewItemText(int index,
-                                                   const GroupPermissionRule &rule)
+void PortSettingsConfigDialog::setListViewItemText(
+  int index, const GroupPermissionRule &rule)
 {
   m_ruleList.setSubItemText(index, 0, rule.getGroupName().getString());
   m_ruleList.setSubItemText(index, 1, permissionToString(rule.getPermissionFlags()));
@@ -131,87 +56,36 @@ void PermissionsConfigDialog::setListViewItemText(int index,
   m_ruleList.setSubItemText(index, 2, priStr.getString());
 }
 
-BOOL PermissionsConfigDialog::onCommand(UINT controlID, UINT notificationID)
-{
-  switch (controlID) {
-  case IDC_ADD_RULE_BUTTON:
-    onAddRuleClick();
-    break;
-  case IDC_EDIT_RULE_BUTTON:
-    onEditRuleClick();
-    break;
-  case IDC_REMOVE_RULE_BUTTON:
-    onRemoveRuleClick();
-    break;
-  case IDC_MOVE_UP_RULE_BUTTON:
-    onMoveUpRuleClick();
-    break;
-  case IDC_MOVE_DOWN_RULE_BUTTON:
-    onMoveDownRuleClick();
-    break;
-  case IDC_BROWSE_GROUPS_BUTTON:
-    onBrowseGroupsClick();
-    break;
-  }
-  return TRUE;
-}
-
-BOOL PermissionsConfigDialog::onNotify(UINT controlID, LPARAM data)
-{
-  NMHDR *hdr = (NMHDR *)data;
-  if (hdr->idFrom == IDC_GROUP_LIST) {
-    switch (hdr->code) {
-    case LVN_ITEMCHANGED:
-      onListViewSelChange();
-      break;
-    case NM_DBLCLK:
-      onEditRuleClick();
-      break;
-    }
-  }
-  return TRUE;
-}
-
-void PermissionsConfigDialog::onListViewSelChange()
-{
-  updateButtonsState();
-}
-
-void PermissionsConfigDialog::updateButtonsState()
+void PortSettingsConfigDialog::updateRuleButtonsState()
 {
   int sel   = m_ruleList.getSelectedIndex();
   int count = (int)m_rules.size();
   bool hasSel = (sel >= 0 && sel < count);
 
-  EnableWindow(m_editButton.getWindow(),     hasSel ? TRUE : FALSE);
-  EnableWindow(m_removeButton.getWindow(),   hasSel ? TRUE : FALSE);
-  EnableWindow(m_moveUpButton.getWindow(),   (hasSel && sel > 0) ? TRUE : FALSE);
-  EnableWindow(m_moveDownButton.getWindow(), (hasSel && sel < count - 1) ? TRUE : FALSE);
+  EnableWindow(m_editRuleButton.getWindow(),     hasSel ? TRUE : FALSE);
+  EnableWindow(m_removeRuleButton.getWindow(),   hasSel ? TRUE : FALSE);
+  EnableWindow(m_moveUpRuleButton.getWindow(),   (hasSel && sel > 0) ? TRUE : FALSE);
+  EnableWindow(m_moveDownRuleButton.getWindow(), (hasSel && sel < count - 1) ? TRUE : FALSE);
 }
 
-// --- Rule CRUD ---
-
-void PermissionsConfigDialog::onAddRuleClick()
+void PortSettingsConfigDialog::onAddRuleClick()
 {
-  // Read group name from edit box; use object picker if empty
   StringStorage groupName;
   m_groupNameEdit.getText(&groupName);
 
+  int permIdx = (int)SendMessage(m_permissionCombo.getWindow(),
+                                  CB_GETCURSEL, 0, 0);
+  if (permIdx == CB_ERR) permIdx = 0;
+  UINT32 permFlags = comboIndexToPermission(permIdx);
+
+  StringStorage priStr;
+  m_priorityEdit.getText(&priStr);
+  int priority = _tstoi(priStr.getString());
+
   if (groupName.isEmpty()) {
-    // Open Windows object picker (multi-select) when name box is empty
+    // Open Windows object picker when name box is empty
     std::vector<StringStorage> selected;
-    if (!showObjectPicker(true, &selected) || selected.empty()) {
-      return;
-    }
-
-    // Read permission and priority once for all selected names
-    int permIdx = (int)SendMessage(m_permissionCombo.getWindow(), CB_GETCURSEL, 0, 0);
-    if (permIdx == CB_ERR) permIdx = 0;
-    UINT32 permFlags = comboIndexToPermission(permIdx);
-
-    StringStorage priStr;
-    m_priorityEdit.getText(&priStr);
-    int priority = _tstoi(priStr.getString());
+    if (!showObjectPicker(true, &selected) || selected.empty()) return;
 
     for (size_t i = 0; i < selected.size(); i++) {
       GroupPermissionRule rule(selected[i].getString(), permFlags, priority);
@@ -221,15 +95,6 @@ void PermissionsConfigDialog::onAddRuleClick()
       setListViewItemText(idx, rule);
     }
   } else {
-    // Use the name already typed in the edit box
-    int permIdx = (int)SendMessage(m_permissionCombo.getWindow(), CB_GETCURSEL, 0, 0);
-    if (permIdx == CB_ERR) permIdx = 0;
-    UINT32 permFlags = comboIndexToPermission(permIdx);
-
-    StringStorage priStr;
-    m_priorityEdit.getText(&priStr);
-    int priority = _tstoi(priStr.getString());
-
     GroupPermissionRule rule(groupName.getString(), permFlags, priority);
     m_rules.push_back(rule);
     int idx = (int)m_rules.size() - 1;
@@ -237,53 +102,48 @@ void PermissionsConfigDialog::onAddRuleClick()
     setListViewItemText(idx, rule);
   }
 
-  updateButtonsState();
-  if (m_parentDialog != NULL) {
+  updateRuleButtonsState();
+  if (m_parentDialog != NULL)
     ((ConfigDialog *)m_parentDialog)->updateApplyButtonState();
-  }
 }
 
-void PermissionsConfigDialog::onEditRuleClick()
+void PortSettingsConfigDialog::onEditRuleClick()
 {
   int sel = m_ruleList.getSelectedIndex();
   if (sel < 0 || sel >= (int)m_rules.size()) return;
 
-  // Load selected rule fields into edit controls for in-place editing
+  // Load rule into edit controls
   m_groupNameEdit.setText(m_rules[sel].getGroupName().getString());
-
-  int permIdx = permissionToComboIndex(m_rules[sel].getPermissionFlags());
-  SendMessage(m_permissionCombo.getWindow(), CB_SETCURSEL, permIdx, 0);
+  SendMessage(m_permissionCombo.getWindow(), CB_SETCURSEL,
+              permissionToComboIndex(m_rules[sel].getPermissionFlags()), 0);
 
   StringStorage priStr;
   priStr.format(_T("%d"), m_rules[sel].getPriority());
   m_priorityEdit.setText(priStr.getString());
 
-  // Read updated values from controls
+  // Re-read from controls and update rule in-place
   StringStorage groupName;
   m_groupNameEdit.getText(&groupName);
-
   if (groupName.isEmpty()) return;
 
   int newPermIdx = (int)SendMessage(m_permissionCombo.getWindow(),
                                      CB_GETCURSEL, 0, 0);
   if (newPermIdx == CB_ERR) newPermIdx = 0;
-  UINT32 permFlags = comboIndexToPermission(newPermIdx);
 
   StringStorage newPriStr;
   m_priorityEdit.getText(&newPriStr);
-  int priority = _tstoi(newPriStr.getString());
 
-  // Update rule in-place (non-destructive)
-  m_rules[sel] = GroupPermissionRule(groupName.getString(), permFlags, priority);
+  m_rules[sel] = GroupPermissionRule(groupName.getString(),
+                                     comboIndexToPermission(newPermIdx),
+                                     _tstoi(newPriStr.getString()));
   setListViewItemText(sel, m_rules[sel]);
 
-  updateButtonsState();
-  if (m_parentDialog != NULL) {
+  updateRuleButtonsState();
+  if (m_parentDialog != NULL)
     ((ConfigDialog *)m_parentDialog)->updateApplyButtonState();
-  }
 }
 
-void PermissionsConfigDialog::onRemoveRuleClick()
+void PortSettingsConfigDialog::onRemoveRuleClick()
 {
   int sel = m_ruleList.getSelectedIndex();
   if (sel < 0 || sel >= (int)m_rules.size()) return;
@@ -291,13 +151,12 @@ void PermissionsConfigDialog::onRemoveRuleClick()
   m_rules.erase(m_rules.begin() + sel);
   m_ruleList.removeItem(sel);
 
-  updateButtonsState();
-  if (m_parentDialog != NULL) {
+  updateRuleButtonsState();
+  if (m_parentDialog != NULL)
     ((ConfigDialog *)m_parentDialog)->updateApplyButtonState();
-  }
 }
 
-void PermissionsConfigDialog::onMoveUpRuleClick()
+void PortSettingsConfigDialog::onMoveUpRuleClick()
 {
   int sel = m_ruleList.getSelectedIndex();
   if (sel <= 0 || sel >= (int)m_rules.size()) return;
@@ -307,13 +166,12 @@ void PermissionsConfigDialog::onMoveUpRuleClick()
   setListViewItemText(sel - 1, m_rules[sel - 1]);
   m_ruleList.selectItem(sel - 1);
 
-  updateButtonsState();
-  if (m_parentDialog != NULL) {
+  updateRuleButtonsState();
+  if (m_parentDialog != NULL)
     ((ConfigDialog *)m_parentDialog)->updateApplyButtonState();
-  }
 }
 
-void PermissionsConfigDialog::onMoveDownRuleClick()
+void PortSettingsConfigDialog::onMoveDownRuleClick()
 {
   int sel = m_ruleList.getSelectedIndex();
   if (sel < 0 || sel >= (int)m_rules.size() - 1) return;
@@ -323,27 +181,29 @@ void PermissionsConfigDialog::onMoveDownRuleClick()
   setListViewItemText(sel + 1, m_rules[sel + 1]);
   m_ruleList.selectItem(sel + 1);
 
-  updateButtonsState();
-  if (m_parentDialog != NULL) {
+  updateRuleButtonsState();
+  if (m_parentDialog != NULL)
     ((ConfigDialog *)m_parentDialog)->updateApplyButtonState();
-  }
 }
 
-void PermissionsConfigDialog::onBrowseGroupsClick()
+void PortSettingsConfigDialog::onBrowseGroupsClick()
 {
-  // Single-select: fills group name edit box with the chosen account
   std::vector<StringStorage> selected;
   if (showObjectPicker(false, &selected) && !selected.empty()) {
     m_groupNameEdit.setText(selected[0].getString());
   }
 }
 
-// --- Windows COM Object Picker (copied from WinAuthConfigDialog) ---
+void PortSettingsConfigDialog::onListViewSelChange()
+{
+  updateRuleButtonsState();
+}
 
-bool PermissionsConfigDialog::showObjectPicker(
+// --- Windows COM Object Picker ---
+
+bool PortSettingsConfigDialog::showObjectPicker(
   bool multiSelect, std::vector<StringStorage> *selectedNames)
 {
-  // Initialize COM (safe to call multiple times in same thread)
   HRESULT hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
   bool comInit = SUCCEEDED(hr) || hr == S_FALSE || hr == RPC_E_CHANGED_MODE;
 
@@ -358,7 +218,6 @@ bool PermissionsConfigDialog::showObjectPicker(
     return false;
   }
 
-  // Scope 0: Local computer — local users and groups
   DSOP_SCOPE_INIT_INFO scopes[2];
   ZeroMemory(scopes, sizeof(scopes));
 
@@ -373,7 +232,6 @@ bool PermissionsConfigDialog::showObjectPicker(
     DSOP_DOWNLEVEL_FILTER_GLOBAL_GROUPS |
     DSOP_DOWNLEVEL_FILTER_ALL_WELLKNOWN_SIDS;
 
-  // Scope 1: Domain (silently ignored when not domain-joined)
   scopes[1].cbSize = sizeof(DSOP_SCOPE_INIT_INFO);
   scopes[1].flType = DSOP_SCOPE_TYPE_UPLEVEL_JOINED_DOMAIN |
                      DSOP_SCOPE_TYPE_DOWNLEVEL_JOINED_DOMAIN;
@@ -392,7 +250,7 @@ bool PermissionsConfigDialog::showObjectPicker(
   DSOP_INIT_INFO initInfo;
   ZeroMemory(&initInfo, sizeof(initInfo));
   initInfo.cbSize            = sizeof(initInfo);
-  initInfo.pwzTargetComputer = NULL; // local machine
+  initInfo.pwzTargetComputer = NULL;
   initInfo.cDsScopeInfos     = 2;
   initInfo.aDsScopeInfos     = scopes;
   initInfo.flOptions         = multiSelect ? DSOP_FLAG_MULTISELECT : 0;
@@ -401,13 +259,9 @@ bool PermissionsConfigDialog::showObjectPicker(
   if (FAILED(hr)) {
     pPicker->Release();
     if (comInit) CoUninitialize();
-    MessageBox(m_ctrlThis.getWindow(),
-               _T("Failed to initialize Object Picker."),
-               _T("BaoVNC"), MB_OK | MB_ICONERROR);
     return false;
   }
 
-  // Show "Select Users or Groups" dialog
   IDataObject *pdo = NULL;
   hr = pPicker->InvokeDialog(m_ctrlThis.getWindow(), &pdo);
 
@@ -446,23 +300,9 @@ bool PermissionsConfigDialog::showObjectPicker(
   return result;
 }
 
-bool PermissionsConfigDialog::validateInput()
-{
-  return true; // Rules validated individually on add
-}
+// --- Static permission helpers ---
 
-void PermissionsConfigDialog::apply()
-{
-  if (m_portConfig != NULL) {
-    m_portConfig->setGroupRules(m_rules);
-  } else if (m_config != NULL) {
-    m_config->setGroupRules(m_rules);
-  }
-}
-
-// --- Static permission helpers (mirror WinAuthConfigDialog) ---
-
-const TCHAR *PermissionsConfigDialog::permissionToString(UINT32 flags)
+const TCHAR *PortSettingsConfigDialog::permissionToString(UINT32 flags)
 {
   if (flags & ClientPermissions::PERM_DENY)
     return _T("Deny Access");
@@ -473,7 +313,7 @@ const TCHAR *PermissionsConfigDialog::permissionToString(UINT32 flags)
   return _T("Full Control");
 }
 
-UINT32 PermissionsConfigDialog::comboIndexToPermission(int index)
+UINT32 PortSettingsConfigDialog::comboIndexToPermission(int index)
 {
   switch (index) {
   case 0:  return ClientPermissions::PERM_FULL_CONTROL;
@@ -484,11 +324,11 @@ UINT32 PermissionsConfigDialog::comboIndexToPermission(int index)
   }
 }
 
-int PermissionsConfigDialog::permissionToComboIndex(UINT32 flags)
+int PortSettingsConfigDialog::permissionToComboIndex(UINT32 flags)
 {
   if (flags & ClientPermissions::PERM_DENY)  return 3;
   if (flags == ClientPermissions::PERM_VIEW_ONLY) return 1;
   if (flags == (ClientPermissions::PERM_VIEW_ONLY | ClientPermissions::PERM_CLIPBOARD))
     return 2;
-  return 0; // Full Control
+  return 0;
 }

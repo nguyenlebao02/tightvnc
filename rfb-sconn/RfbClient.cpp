@@ -202,20 +202,18 @@ void RfbClient::execute()
 
       m_shared = rfbInitializer.getSharedFlag();
       m_log->debug(_T("Shared flag = %d"), (int)m_shared);
-      m_viewOnlyAuth = rfbInitializer.getViewOnlyAuth();
-      m_log->debug(_T("Initial view-only state = %d"), (int)m_viewOnly);
-      m_log->debug(_T("Authenticated with view-only password = %d"), (int)m_viewOnlyAuth);
-      m_viewOnly = m_viewOnly || m_viewOnlyAuth;
 
-      // Apply granular permissions from Windows auth or derive from VNC auth
+      // Apply permissions from Windows auth (only auth method)
       if (rfbInitializer.wasWinAuthUsed()) {
         m_permissions = rfbInitializer.getClientPermissions();
-        m_viewOnly = m_permissions.isViewOnly();
+        m_authenticatedUsername = rfbInitializer.getAuthenticatedUsername();
+        m_viewOnlyAuth = m_permissions.isViewOnly();
+        m_viewOnly = m_viewOnly || m_viewOnlyAuth;
         m_log->info(_T("Windows auth permissions = 0x%08X, viewOnly = %d"),
                     m_permissions.getFlags(), (int)m_viewOnly);
       } else {
-        // Derive permissions from VNC auth result
-        m_permissions = ClientPermissions::fromViewOnlyFlag(m_viewOnlyAuth);
+        // Loopback / no-auth — full control
+        m_viewOnlyAuth = false;
       }
 
       // Let RfbClientManager handle new authenticated connection.

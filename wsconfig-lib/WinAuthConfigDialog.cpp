@@ -360,7 +360,7 @@ bool WinAuthConfigDialog::showObjectPicker(
     if (comInit) CoUninitialize();
     MessageBox(m_ctrlThis.getWindow(),
                _T("Failed to create Object Picker dialog."),
-               _T("TightVNC"), MB_OK | MB_ICONERROR);
+               _T("BaoVNC"), MB_OK | MB_ICONERROR);
     return false;
   }
 
@@ -410,7 +410,7 @@ bool WinAuthConfigDialog::showObjectPicker(
     if (comInit) CoUninitialize();
     MessageBox(m_ctrlThis.getWindow(),
                _T("Failed to initialize Object Picker."),
-               _T("TightVNC"), MB_OK | MB_ICONERROR);
+               _T("BaoVNC"), MB_OK | MB_ICONERROR);
     return false;
   }
 

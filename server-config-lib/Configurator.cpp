@@ -1019,21 +1019,6 @@ bool Configurator::savePortConfig(SettingsManager *sm)
     if (!sm->setString(key.getString(), pmStr.getString()))
       saveResult = false;
 
-    // Auth mode
-    key.format(_T("Port%u.AuthMode"), i);
-    sm->setUINT(key.getString(), (UINT)pc.getAuthMode());
-
-    // UseAuth
-    key.format(_T("Port%u.UseAuth"), i);
-    sm->setUINT(key.getString(), pc.isUsingAuthentication() ? 1 : 0);
-
-    // Passwords (binary data, same format as global passwords)
-    key.format(_T("Port%u.PrimaryPassword"), i);
-    savePortPassword(sm, key.getString(), pc, true);
-
-    key.format(_T("Port%u.ReadOnlyPassword"), i);
-    savePortPassword(sm, key.getString(), pc, false);
-
     // Win auth permissions
     key.format(_T("Port%u.DefaultWinAuthPerms"), i);
     sm->setUINT(key.getString(), (UINT)pc.getDefaultWinAuthPermissions());
@@ -1041,6 +1026,10 @@ bool Configurator::savePortConfig(SettingsManager *sm)
     // Win auth group rules
     key.format(_T("Port%u.WinAuthGroupRules"), i);
     savePortGroupRules(sm, key.getString(), pc.getGroupRules());
+
+    // Max connections per user
+    key.format(_T("Port%u.MaxConnectionsPerUser"), i);
+    sm->setUINT(key.getString(), (UINT)pc.getMaxConnectionsPerUser());
   }
 
   return saveResult;
@@ -1081,29 +1070,9 @@ bool Configurator::loadPortConfig(SettingsManager *sm, ServerConfig *config)
       continue;
     }
 
-    // Load per-port auth mode
-    key.format(_T("Port%u.AuthMode"), i);
-    UINT uVal;
-    if (sm->getUINT(key.getString(), &uVal)) {
-      hasPerPortAuth = true;
-      if (uVal > 2) uVal = 0;
-      pc.setAuthMode((int)uVal);
-    }
-
-    // Load UseAuth
-    key.format(_T("Port%u.UseAuth"), i);
-    if (sm->getUINT(key.getString(), &uVal)) {
-      pc.setUseAuthentication(uVal != 0);
-    }
-
-    // Load passwords
-    key.format(_T("Port%u.PrimaryPassword"), i);
-    loadPortPassword(sm, key.getString(), &pc, true);
-
-    key.format(_T("Port%u.ReadOnlyPassword"), i);
-    loadPortPassword(sm, key.getString(), &pc, false);
-
     // Load win auth permissions
+    UINT uVal;
+    hasPerPortAuth = true;  // Always Windows auth
     key.format(_T("Port%u.DefaultWinAuthPerms"), i);
     if (sm->getUINT(key.getString(), &uVal)) {
       pc.setDefaultWinAuthPermissions((UINT32)uVal);
@@ -1114,6 +1083,12 @@ bool Configurator::loadPortConfig(SettingsManager *sm, ServerConfig *config)
     std::vector<GroupPermissionRule> rules;
     if (loadPortGroupRules(sm, key.getString(), &rules)) {
       pc.setGroupRules(rules);
+    }
+
+    // Load max connections per user
+    key.format(_T("Port%u.MaxConnectionsPerUser"), i);
+    if (sm->getUINT(key.getString(), &uVal)) {
+      pc.setMaxConnectionsPerUser((int)uVal);
     }
 
     allPorts.push_back(pc);
@@ -1133,37 +1108,6 @@ bool Configurator::loadPortConfig(SettingsManager *sm, ServerConfig *config)
 }
 
 // --- Per-port config helpers ---
-
-void Configurator::savePortPassword(SettingsManager *sm, const TCHAR *key,
-                                    const PortConfig &pc, bool primary)
-{
-  if (primary && pc.hasPrimaryPassword()) {
-    unsigned char pwd[PortConfig::VNC_PASSWORD_SIZE];
-    pc.getPrimaryPassword(pwd);
-    sm->setBinaryData(key, pwd, PortConfig::VNC_PASSWORD_SIZE);
-  } else if (!primary && pc.hasReadOnlyPassword()) {
-    unsigned char pwd[PortConfig::VNC_PASSWORD_SIZE];
-    pc.getReadOnlyPassword(pwd);
-    sm->setBinaryData(key, pwd, PortConfig::VNC_PASSWORD_SIZE);
-  } else {
-    sm->deleteKey(key);
-  }
-}
-
-void Configurator::loadPortPassword(SettingsManager *sm, const TCHAR *key,
-                                    PortConfig *pc, bool primary)
-{
-  unsigned char buffer[PortConfig::VNC_PASSWORD_SIZE] = {0};
-  size_t passSize = PortConfig::VNC_PASSWORD_SIZE;
-
-  if (sm->getBinaryData(key, (void *)buffer, &passSize)) {
-    if (primary) {
-      pc->setPrimaryPassword(buffer);
-    } else {
-      pc->setReadOnlyPassword(buffer);
-    }
-  }
-}
 
 void Configurator::savePortGroupRules(SettingsManager *sm, const TCHAR *key,
                                       const std::vector<GroupPermissionRule> &rules)
@@ -1212,37 +1156,8 @@ bool Configurator::loadPortGroupRules(SettingsManager *sm, const TCHAR *key,
 void Configurator::copyGlobalAuthToPortConfig(ServerConfig *config,
                                                PortConfig *pc)
 {
-  pc->setAuthMode(config->getAuthMode());
-  pc->setUseAuthentication(config->isUsingAuthentication());
   pc->setDefaultWinAuthPermissions(config->getDefaultWinAuthPermissions());
   pc->setGroupRules(config->getGroupRules());
-
-  unsigned char pass[ServerConfig::VNC_PASSWORD_SIZE];
-  if (config->hasPrimaryPassword()) {
-    config->getPrimaryPassword(pass);
-    pc->setPrimaryPassword(pass);
-    SecureZeroMemory(pass, sizeof(pass));
-  }
-  if (config->hasReadOnlyPassword()) {
-    config->getReadOnlyPassword(pass);
-    pc->setReadOnlyPassword(pass);
-    SecureZeroMemory(pass, sizeof(pass));
-  }
-
-  // Deep-copy global IP access rules
-  IpAccessControl *globalIp = config->getAccessControl();
-  IpAccessControl *portIp = pc->getIpAccessControl();
-  for (size_t i = 0; i < globalIp->size(); i++) {
-    IpAccessRule *src = (*globalIp)[i];
-    IpAccessRule *copy = new IpAccessRule();
-    copy->setAction(src->getAction());
-    StringStorage firstIp, lastIp;
-    src->getFirstIp(&firstIp);
-    src->getLastIp(&lastIp);
-    copy->setFirstIp(firstIp.getString());
-    copy->setLastIp(lastIp.getString());
-    portIp->push_back(copy);
-  }
 }
 
 void Configurator::migrateToPerPortConfig(ServerConfig *config)

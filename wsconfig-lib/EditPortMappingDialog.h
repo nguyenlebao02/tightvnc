@@ -67,7 +67,6 @@ protected:
   void populateDisplayCombo();
 
 protected:
-  TextBox m_geometryTextBox;
   TextBox m_portTextBox;
   DialogType m_dialogType;
   PortMapping *m_mapping;

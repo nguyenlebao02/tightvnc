@@ -30,7 +30,8 @@
 #include "server-config-lib/Configurator.h"
 
 // Dialog for the Session tab (IDD_CONFIG_SESSION_PAGE).
-// Handles session sharing mode, disconnect action, and general session options.
+// General session options only. Session sharing is hard-coded to "always shared"
+// and disconnect action to "do nothing" — controlled via per-port max connections.
 class SessionConfigDialog : public BaseDialog
 {
 public:
@@ -39,11 +40,8 @@ public:
 
   void setParentDialog(BaseDialog *dialog);
 
-  // Validate user input before apply; shows error on failure.
   bool validateInput();
-  // Load current ServerConfig values into controls.
   void updateUI();
-  // Save control values back to ServerConfig.
   void apply();
 
 protected:
@@ -55,24 +53,8 @@ protected:
 private:
   void initControls();
 
-  // Control event handlers
-  void onShareRadioButtonClick(int number);
-  void onDARadioButtonClick(int number);
-
 protected:
   BaseDialog *m_parent;
-
-  // Session sharing — 5 mutually exclusive radio buttons
-  // Radio 1: always shared
-  // Radio 2: never shared, keep existing
-  // Radio 3: never shared, disconnect existing
-  // Radio 4: block new non-shared if connected
-  // Radio 5: disconnect existing on new non-shared
-  CheckBox m_shared[5];
-
-  // Disconnect action — 3 mutually exclusive radio buttons
-  // [0]=Do nothing, [1]=Lock, [2]=Logoff
-  CheckBox m_disconnectAction[3];
 
   // General session option checkboxes
   CheckBox m_enableFileTransfers;

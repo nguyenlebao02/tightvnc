@@ -64,6 +64,10 @@ public:
   ClientPermissions getClientPermissions() const { return m_clientPermissions; }
   bool wasWinAuthUsed() const { return m_winAuthUsed; }
 
+  // Returns the authenticated username (DOMAIN\user form).
+  // Only valid after authPhase() if Windows auth was used.
+  const StringStorage &getAuthenticatedUsername() const { return m_authenticatedUsername; }
+
 protected:
   void initVersion();
   // @throw Exception if loopback isn't allowed.
@@ -79,7 +83,6 @@ protected:
 
   void doAuth(UINT32 authType);
   void doTightAuth();
-  void doVncAuth();
   void doAuthNone();
   void doWinAuth();
 
@@ -103,6 +106,7 @@ protected:
   bool m_authAllowed;
   bool m_winAuthUsed;
   ClientPermissions m_clientPermissions;
+  StringStorage m_authenticatedUsername;
 
   ClientAuthListener *m_extAuthListener;
   RfbClient *m_client;

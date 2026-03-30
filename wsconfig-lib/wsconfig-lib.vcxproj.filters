@@ -38,9 +38,6 @@
     <ClCompile Include="PortMappingDialog.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="ServerConfigDialog.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="TvnLogFilename.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -77,9 +74,6 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="PortMappingDialog.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="ServerConfigDialog.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="TvnLogFilename.h">

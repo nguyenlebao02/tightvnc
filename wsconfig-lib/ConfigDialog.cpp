@@ -31,7 +31,6 @@ ConfigDialog::ConfigDialog(bool forService, ControlCommand *reloadConfigCommand)
   m_isConfiguringService(forService),
   m_reloadConfigCommand(reloadConfigCommand),
   m_lastSelectedTabIndex(0),
-  m_portSelectorLabel(NULL),
   m_selectedPortIndex(0)
 {
 }
@@ -41,7 +40,6 @@ ConfigDialog::ConfigDialog(bool forService)
   m_isConfiguringService(forService),
   m_reloadConfigCommand(NULL),
   m_lastSelectedTabIndex(0),
-  m_portSelectorLabel(NULL),
   m_selectedPortIndex(0)
 {
 }
@@ -51,7 +49,6 @@ ConfigDialog::ConfigDialog()
   m_isConfiguringService(false),
   m_reloadConfigCommand(NULL),
   m_lastSelectedTabIndex(0),
-  m_portSelectorLabel(NULL),
   m_selectedPortIndex(0)
 {
 }
@@ -116,11 +113,6 @@ BOOL ConfigDialog::onCommand(UINT controlID, UINT notificationID)
   case IDC_APPLY:
     onApplyButtonClick();
     break;
-  case IDC_PORT_SELECTOR_COMBO:
-    if (notificationID == CBN_SELCHANGE) {
-      onPortSelectorChange();
-    }
-    break;
   }
   return TRUE;
 }
@@ -154,42 +146,9 @@ BOOL ConfigDialog::onInitDialog()
   m_portConfigs = srvConfig->getAllPortConfigs();
   m_selectedPortIndex = 0;
 
-  // Create port selector label and combo above the tab control
-  HWND dialogHwnd = m_ctrlThis.getWindow();
-  HFONT hFont = (HFONT)SendMessage(dialogHwnd, WM_GETFONT, 0, 0);
-
-  RECT tabRect;
-  GetWindowRect(GetDlgItem(dialogHwnd, IDC_CONFIG_TAB), &tabRect);
-  POINT tabPos = { tabRect.left, tabRect.top };
-  ScreenToClient(dialogHwnd, &tabPos);
-
-  // Place label and combo above the tab control
-  int labelW = 80, comboW = 200, comboH = 200, ctrlH = 22;
-  int y = tabPos.y - ctrlH - 6;
-
-  m_portSelectorLabel = CreateWindow(
-    _T("STATIC"), _T("Active Port:"),
-    WS_CHILD | WS_VISIBLE | SS_RIGHT,
-    tabPos.x, y + 3, labelW, ctrlH,
-    dialogHwnd, (HMENU)(UINT_PTR)IDC_PORT_SELECTOR_LABEL,
-    NULL, NULL);
-  if (hFont) SendMessage(m_portSelectorLabel, WM_SETFONT, (WPARAM)hFont, TRUE);
-
-  HWND hCombo = CreateWindow(
-    _T("COMBOBOX"), _T(""),
-    WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL,
-    tabPos.x + labelW + 4, y, comboW, comboH,
-    dialogHwnd, (HMENU)(UINT_PTR)IDC_PORT_SELECTOR_COMBO,
-    NULL, NULL);
-  if (hFont) SendMessage(hCombo, WM_SETFONT, (WPARAM)hFont, TRUE);
-  m_portSelector.setWindow(hCombo);
-
-  // Populate port selector combo
-  refreshPortSelector();
-
   m_tabControl.addTab(NULL, _T("Temp"));
 
-  // Set up per-port context for tabs before creating them
+  // Set up per-port context for Connection tab
   m_connectionDialog.setPortConfigs(&m_portConfigs);
 
   m_connectionDialog.setParent(&m_ctrlThis);
@@ -197,26 +156,15 @@ BOOL ConfigDialog::onInitDialog()
   m_connectionDialog.create();
   moveDialogToTabControl(&m_connectionDialog);
 
-  m_authenticationDialog.setParent(&m_ctrlThis);
-  m_authenticationDialog.setParentDialog(this);
-  m_authenticationDialog.create();
-  moveDialogToTabControl(&m_authenticationDialog);
-  m_authenticationDialog.hide();
-
-  m_ipAccessControlDialog.setParent(&m_ctrlThis);
-  m_ipAccessControlDialog.setParentDialog(this);
-  m_ipAccessControlDialog.create();
-  moveDialogToTabControl(&m_ipAccessControlDialog);
+  m_portSettingsDialog.setParent(&m_ctrlThis);
+  m_portSettingsDialog.setParentDialog(this);
+  m_portSettingsDialog.create();
+  moveDialogToTabControl(&m_portSettingsDialog);
 
   m_displayInputDialog.setParent(&m_ctrlThis);
   m_displayInputDialog.setParentDialog(this);
   m_displayInputDialog.create();
   moveDialogToTabControl(&m_displayInputDialog);
-
-  m_permissionsDialog.setParent(&m_ctrlThis);
-  m_permissionsDialog.setParentDialog(this);
-  m_permissionsDialog.create();
-  moveDialogToTabControl(&m_permissionsDialog);
 
   m_sessionDialog.setParent(&m_ctrlThis);
   m_sessionDialog.setParentDialog(this);
@@ -229,10 +177,8 @@ BOOL ConfigDialog::onInitDialog()
   moveDialogToTabControl(&m_loggingDialog);
 
   m_tabControl.addTab(&m_connectionDialog, _T("Connection"));
-  m_tabControl.addTab(&m_authenticationDialog, _T("Authentication"));
-  m_tabControl.addTab(&m_ipAccessControlDialog, StringTable::getString(IDS_ACCESS_CONTROL_TAB_CAPTION));
+  m_tabControl.addTab(&m_portSettingsDialog, _T("Port Settings"));
   m_tabControl.addTab(&m_displayInputDialog, _T("Display && Input"));
-  m_tabControl.addTab(&m_permissionsDialog, _T("Permissions"));
   m_tabControl.addTab(&m_sessionDialog, _T("Session"));
   m_tabControl.addTab(&m_loggingDialog, _T("Logging"));
 
@@ -281,10 +227,8 @@ void ConfigDialog::onApplyButtonClick()
   // Fill global server configuration with values from gui.
   if (canApply) {
     m_connectionDialog.apply();
-    m_authenticationDialog.apply();
-    m_ipAccessControlDialog.apply();
+    m_portSettingsDialog.apply();
     m_displayInputDialog.apply();
-    m_permissionsDialog.apply();
     m_sessionDialog.apply();
     m_loggingDialog.apply();
 
@@ -303,7 +247,7 @@ void ConfigDialog::onApplyButtonClick()
     if (m_reloadConfigCommand->executionResultOk()) {
       m_sessionDialog.updateUI();
       m_loggingDialog.updateUI();
-      m_ipAccessControlDialog.updateUI();
+      m_portSettingsDialog.updateUI();
       m_ctrlApplyButton.setEnabled(false);
     }
   } else {
@@ -365,20 +309,12 @@ bool ConfigDialog::validateInput()
     m_tabControl.showTab(&m_connectionDialog);
     return false;
   }
-  if (!m_authenticationDialog.validateInput()) {
-    m_tabControl.showTab(&m_authenticationDialog);
-    return false;
-  }
-  if (!m_ipAccessControlDialog.validateInput()) {
-    m_tabControl.showTab(&m_ipAccessControlDialog);
+  if (!m_portSettingsDialog.validateInput()) {
+    m_tabControl.showTab(&m_portSettingsDialog);
     return false;
   }
   if (!m_displayInputDialog.validateInput()) {
     m_tabControl.showTab(&m_displayInputDialog);
-    return false;
-  }
-  if (!m_permissionsDialog.validateInput()) {
-    m_tabControl.showTab(&m_permissionsDialog);
     return false;
   }
   if (!m_sessionDialog.validateInput()) {
@@ -414,29 +350,17 @@ PortConfig *ConfigDialog::getSelectedPortConfig()
 
 void ConfigDialog::refreshPortSelector()
 {
-  m_portSelector.removeAllItems();
-  for (size_t i = 0; i < m_portConfigs.size(); i++) {
-    StringStorage label;
-    label.format(_T("Port %d"), m_portConfigs[i].getPort());
-    m_portSelector.addItem(label.getString());
-  }
-  if (m_portConfigs.empty()) {
-    m_portSelector.addItem(_T("(no ports)"));
-  }
-  // Clamp selection
-  if (m_selectedPortIndex >= (int)m_portConfigs.size()) {
-    m_selectedPortIndex = m_portConfigs.empty() ? 0 : (int)m_portConfigs.size() - 1;
-  }
-  m_portSelector.setSelectedItem(m_selectedPortIndex);
+  // Delegate to PortSettingsConfigDialog which owns the port selector combo
+  m_portSettingsDialog.refreshPortSelector(m_portConfigs, m_selectedPortIndex);
 }
 
-void ConfigDialog::onPortSelectorChange()
+void ConfigDialog::onPortSelectorChange(int newIndex)
 {
   // Save current tab state into the old PortConfig
   saveCurrentPortContext();
 
   // Switch to newly selected port
-  m_selectedPortIndex = m_portSelector.getSelectedItemIndex();
+  m_selectedPortIndex = newIndex;
   switchPortContext();
 }
 
@@ -444,19 +368,12 @@ void ConfigDialog::switchPortContext()
 {
   PortConfig *pc = getSelectedPortConfig();
 
-  // Push per-port config to tabs that need it
-  m_authenticationDialog.setPortConfig(pc);
-  m_authenticationDialog.updateUI();
+  // Refresh the port selector combo inside the Port Settings tab
+  refreshPortSelector();
 
-  m_permissionsDialog.setPortConfig(pc);
-  m_permissionsDialog.updateUI();
-
-  m_ipAccessControlDialog.setPortConfig(pc);
-  // IpAccessControlDialog reads container in onInitDialog();
-  // for subsequent port switches, update the container pointer
-  if (pc != NULL) {
-    m_ipAccessControlDialog.updateUI();
-  }
+  // Push per-port config to the merged Port Settings tab
+  m_portSettingsDialog.setPortConfig(pc);
+  m_portSettingsDialog.updateUI();
 }
 
 void ConfigDialog::saveCurrentPortContext()
@@ -464,8 +381,6 @@ void ConfigDialog::saveCurrentPortContext()
   PortConfig *pc = getSelectedPortConfig();
   if (pc == NULL) return;
 
-  // Tell per-port tabs to write their UI state into the PortConfig
-  m_authenticationDialog.apply();
-  m_permissionsDialog.apply();
-  // IP access rules are edited in-place through the IpAccessControl pointer
+  // Tell the Port Settings tab to write UI state into the PortConfig
+  m_portSettingsDialog.apply();
 }

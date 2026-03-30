@@ -54,27 +54,41 @@ void EditPortMappingDialog::onOkButtonClick()
   if (!isUserDataValid())
     return ;
 
-  PortMappingRect rect;
   int port;
 
   StringStorage portStringStorage;
-  StringStorage rectStringStorage;
-
-  m_geometryTextBox.getText(&rectStringStorage);
   m_portTextBox.getText(&portStringStorage);
-
-  PortMappingRect::parse(rectStringStorage.getString(), &rect);
   StringParser::parseInt(portStringStorage.getString(), &port);
 
   m_mapping->setPort(port);
-  m_mapping->setRect(rect);
 
-  // Save display selection
+  // Determine rect and devicePath from display combo selection
   int displaySel = (int)SendMessage(m_displayCombo.getWindow(),
                                      CB_GETCURSEL, 0, 0);
   if (displaySel > 0 && displaySel <= (int)m_displayInfos.size()) {
-    m_mapping->setDevicePath(m_displayInfos[displaySel - 1].devicePath.getString());
+    // Specific monitor — use its rect
+    const DisplayInfo &di = m_displayInfos[displaySel - 1];
+    PortMappingRect rect(di.rect.left, di.rect.top,
+                         di.rect.right, di.rect.bottom);
+    m_mapping->setRect(rect);
+    m_mapping->setDevicePath(di.devicePath.getString());
   } else {
+    // "All Displays" — compute bounding rect of all monitors
+    PortMappingRect rect;
+    if (!m_displayInfos.empty()) {
+      int minL = m_displayInfos[0].rect.left;
+      int minT = m_displayInfos[0].rect.top;
+      int maxR = m_displayInfos[0].rect.right;
+      int maxB = m_displayInfos[0].rect.bottom;
+      for (size_t i = 1; i < m_displayInfos.size(); i++) {
+        if (m_displayInfos[i].rect.left < minL) minL = m_displayInfos[i].rect.left;
+        if (m_displayInfos[i].rect.top < minT) minT = m_displayInfos[i].rect.top;
+        if (m_displayInfos[i].rect.right > maxR) maxR = m_displayInfos[i].rect.right;
+        if (m_displayInfos[i].rect.bottom > maxB) maxB = m_displayInfos[i].rect.bottom;
+      }
+      rect = PortMappingRect(minL, minT, maxR, maxB);
+    }
+    m_mapping->setRect(rect);
     m_mapping->setDevicePath(_T(""));
   }
 
@@ -84,7 +98,6 @@ void EditPortMappingDialog::onOkButtonClick()
 void EditPortMappingDialog::initControls()
 {
   HWND dialogHwnd = m_ctrlThis.getWindow();
-  m_geometryTextBox.setWindow(GetDlgItem(dialogHwnd, IDC_GEOMETRY_EDIT));
   m_portTextBox.setWindow(GetDlgItem(dialogHwnd, IDC_PORT_EDIT));
   m_displayCombo.setWindow(GetDlgItem(dialogHwnd, IDC_DISPLAY_COMBO));
 }
@@ -115,23 +128,10 @@ void EditPortMappingDialog::populateDisplayCombo()
 
 bool EditPortMappingDialog::isUserDataValid()
 {
-  StringStorage rectStringStorage;
   StringStorage portStringStorage;
-
-  m_geometryTextBox.getText(&rectStringStorage);
   m_portTextBox.getText(&portStringStorage);
 
-  if (!PortMappingRect::tryParse(rectStringStorage.getString())) {
-    MessageBox(m_ctrlThis.getWindow(),
-               StringTable::getString(IDS_INVALID_PORT_MAPPING_STRING),
-               StringTable::getString(IDS_CAPTION_BAD_INPUT),
-               MB_OK | MB_ICONWARNING);
-    m_geometryTextBox.setFocus();
-    return false;
-  }
-
   int port;
-
   StringParser::parseInt(portStringStorage.getString(), &port);
 
   if ((port < 1) || (port > 65535)) {
@@ -166,18 +166,13 @@ BOOL EditPortMappingDialog::onInitDialog()
 
   if (m_dialogType == Add) {
     m_portTextBox.setText(_T("5901"));
-    m_geometryTextBox.setText(_T("640x480+0+0"));
+    // Display combo defaults to "All Displays" (index 0)
   } else if (m_dialogType == Edit) {
     StringStorage portString;
-    StringStorage rectString;
-
     portString.format(_T("%d"), m_mapping->getPort());
-    m_mapping->getRect().toString(&rectString);
-
     m_portTextBox.setText(portString.getString());
-    m_geometryTextBox.setText(rectString.getString());
 
-    // Select correct display in combo
+    // Select correct display in combo from devicePath
     const StringStorage &devPath = m_mapping->getDevicePath();
     int selIdx = 0;
     if (devPath.getLength() > 0) {

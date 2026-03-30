@@ -28,24 +28,16 @@
 #include "util/StringStorage.h"
 #include "PortMapping.h"
 #include "PortMappingRect.h"
-#include "IpAccessControl.h"
 #include "ClientPermissions.h"
 #include "GroupPermissionRule.h"
 
 #include <vector>
 
-// Per-port configuration: auth, passwords, permissions, display.
+// Per-port configuration: Windows auth, permissions, display.
 // Value type — safe to copy across threads via snapshot.
 class PortConfig
 {
 public:
-  static const int VNC_PASSWORD_SIZE = 8;
-
-  // Auth mode values (matches ServerConfig::AuthMode to avoid circular include)
-  static const int AUTH_VNC_ONLY     = 0;
-  static const int AUTH_WINDOWS_ONLY = 1;
-  static const int AUTH_BOTH         = 2;
-
   PortConfig();
   PortConfig(const PortConfig &other);
   PortConfig &operator=(const PortConfig &other);
@@ -61,33 +53,15 @@ public:
   const StringStorage &getDevicePath() const;
   void setDevicePath(const TCHAR *path);
 
-  // Auth mode (0=VNC_ONLY, 1=WINDOWS_ONLY, 2=BOTH)
-  int getAuthMode() const;
-  void setAuthMode(int mode);
-
-  // VNC passwords (raw 8-byte encrypted arrays)
-  void getPrimaryPassword(unsigned char *out) const;
-  void setPrimaryPassword(const unsigned char *value);
-  bool hasPrimaryPassword() const;
-  void deletePrimaryPassword();
-
-  void getReadOnlyPassword(unsigned char *out) const;
-  void setReadOnlyPassword(const unsigned char *value);
-  bool hasReadOnlyPassword() const;
-  void deleteReadOnlyPassword();
-
-  bool isUsingAuthentication() const;
-  void setUseAuthentication(bool use);
-
   // Windows auth group rules
   std::vector<GroupPermissionRule> getGroupRules() const;
   void setGroupRules(const std::vector<GroupPermissionRule> &rules);
   UINT32 getDefaultWinAuthPermissions() const;
   void setDefaultWinAuthPermissions(UINT32 perms);
 
-  // IP access control (per-port)
-  IpAccessControl *getIpAccessControl();
-  const IpAccessControl *getIpAccessControl() const;
+  // Max concurrent connections per user (Windows auth only, 0=unlimited)
+  int getMaxConnectionsPerUser() const;
+  void setMaxConnectionsPerUser(int maxConn);
 
   // Convert to/from legacy PortMapping (display fields only)
   PortMapping toPortMapping() const;
@@ -98,17 +72,10 @@ protected:
   PortMappingRect m_rect;
   StringStorage m_devicePath;
 
-  int m_authMode;
-  unsigned char m_primaryPassword[VNC_PASSWORD_SIZE];
-  unsigned char m_readonlyPassword[VNC_PASSWORD_SIZE];
-  bool m_hasPrimaryPassword;
-  bool m_hasReadonlyPassword;
-  bool m_useAuthentication;
-
   std::vector<GroupPermissionRule> m_groupRules;
   UINT32 m_defaultWinAuthPermissions;
 
-  IpAccessControl m_ipAccessRules;
+  int m_maxConnectionsPerUser;  // 0 = unlimited
 };
 
 #endif // _PORT_CONFIG_H_

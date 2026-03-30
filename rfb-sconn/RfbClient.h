@@ -91,6 +91,12 @@ public:
   ClientPermissions getPermissions() const { return m_permissions; }
   void setPermissions(const ClientPermissions &perms) { m_permissions = perms; }
 
+  // Authenticated username (DOMAIN\user form, empty for VNC auth)
+  const StringStorage &getAuthenticatedUsername() const { return m_authenticatedUsername; }
+
+  // Per-port config for this client connection
+  const PortConfig &getPortConfig() const { return m_portConfig; }
+
   void setViewOnlyFlag(bool value);
 
   // Changes current dynViewPort value by new.
@@ -150,6 +156,7 @@ private:
   bool m_viewOnlyAuth;
   bool m_shared;
   ClientPermissions m_permissions;
+  StringStorage m_authenticatedUsername;
   PortConfig m_portConfig;
 
   LogWriter *m_log;

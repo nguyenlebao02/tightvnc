@@ -36,7 +36,8 @@ AuthenticationConfigDialog::AuthenticationConfigDialog()
   m_portConfig(NULL),
   m_ppControl(NULL),
   m_vpControl(NULL),
-  m_cpControl(NULL)
+  m_cpControl(NULL),
+  m_portSelectorLabel(NULL)
 {
 }
 
@@ -63,6 +64,44 @@ BOOL AuthenticationConfigDialog::onInitDialog()
 void AuthenticationConfigDialog::initControls()
 {
   HWND hwnd = m_ctrlThis.getWindow();
+  HFONT hFont = (HFONT)SendMessage(hwnd, WM_GETFONT, 0, 0);
+
+  // Create port selector label and combo at the top of this tab
+  int labelW = 80, comboW = 180, comboH = 200, ctrlH = 20;
+  int x = 6, y = 2;
+
+  m_portSelectorLabel = CreateWindow(
+    _T("STATIC"), _T("Active Port:"),
+    WS_CHILD | WS_VISIBLE | SS_RIGHT,
+    x, y + 3, labelW, ctrlH,
+    hwnd, (HMENU)(UINT_PTR)IDC_PORT_SELECTOR_LABEL,
+    NULL, NULL);
+  if (hFont) SendMessage(m_portSelectorLabel, WM_SETFONT, (WPARAM)hFont, TRUE);
+
+  HWND hCombo = CreateWindow(
+    _T("COMBOBOX"), _T(""),
+    WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL,
+    x + labelW + 4, y, comboW, comboH,
+    hwnd, (HMENU)(UINT_PTR)IDC_PORT_SELECTOR_COMBO,
+    NULL, NULL);
+  if (hFont) SendMessage(hCombo, WM_SETFONT, (WPARAM)hFont, TRUE);
+  m_portSelector.setWindow(hCombo);
+
+  // Shift all existing child controls down by 26px to make room for port selector
+  int shiftY = 26;
+  HWND hChild = GetWindow(hwnd, GW_CHILD);
+  while (hChild != NULL) {
+    // Skip the controls we just created
+    if (hChild != m_portSelectorLabel && hChild != hCombo) {
+      RECT rc;
+      GetWindowRect(hChild, &rc);
+      POINT pt = { rc.left, rc.top };
+      ScreenToClient(hwnd, &pt);
+      SetWindowPos(hChild, NULL, pt.x, pt.y + shiftY,
+                   0, 0, SWP_NOSIZE | SWP_NOZORDER);
+    }
+    hChild = GetWindow(hChild, GW_HWNDNEXT);
+  }
 
   // VNC authentication controls
   m_useAuthentication.setWindow(GetDlgItem(hwnd, IDC_USE_AUTHENTICATION));
@@ -262,6 +301,9 @@ BOOL AuthenticationConfigDialog::onCommand(UINT controlID, UINT notificationID)
     }
   } else if (notificationID == CBN_SELCHANGE) {
     switch (controlID) {
+    case IDC_PORT_SELECTOR_COMBO:
+      onPortSelectorChange();
+      break;
     case IDC_AUTH_MODE_COMBO:
       onAuthModeChange();
       break;
@@ -382,6 +424,35 @@ void AuthenticationConfigDialog::apply()
     m_config->setControlPassword((const unsigned char *)m_cpControl->getCryptedPassword());
   } else {
     m_config->deleteControlPassword();
+  }
+}
+
+// --- Port selector ---
+
+void AuthenticationConfigDialog::refreshPortSelector(
+  const std::vector<PortConfig> &ports, int selectedIndex)
+{
+  HWND hCombo = m_portSelector.getWindow();
+  if (hCombo == NULL) return;
+
+  SendMessage(hCombo, CB_RESETCONTENT, 0, 0);
+  for (size_t i = 0; i < ports.size(); i++) {
+    StringStorage label;
+    label.format(_T("Port %d"), ports[i].getPort());
+    SendMessage(hCombo, CB_ADDSTRING, 0, (LPARAM)label.getString());
+  }
+  if (selectedIndex >= 0 && selectedIndex < (int)ports.size()) {
+    SendMessage(hCombo, CB_SETCURSEL, selectedIndex, 0);
+  }
+}
+
+void AuthenticationConfigDialog::onPortSelectorChange()
+{
+  int newIndex = (int)SendMessage(m_portSelector.getWindow(),
+                                  CB_GETCURSEL, 0, 0);
+  if (newIndex == CB_ERR) return;
+  if (m_parentDialog != NULL) {
+    ((ConfigDialog *)m_parentDialog)->onPortSelectorChange(newIndex);
   }
 }
 

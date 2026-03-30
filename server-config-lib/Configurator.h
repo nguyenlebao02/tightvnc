@@ -101,10 +101,6 @@ private:
   bool loadPortConfig(SettingsManager *sm, ServerConfig *config);
 
   // Per-port config helpers
-  void savePortPassword(SettingsManager *sm, const TCHAR *key,
-                        const PortConfig &pc, bool primary);
-  void loadPortPassword(SettingsManager *sm, const TCHAR *key,
-                        PortConfig *pc, bool primary);
   void savePortGroupRules(SettingsManager *sm, const TCHAR *key,
                           const std::vector<GroupPermissionRule> &rules);
   bool loadPortGroupRules(SettingsManager *sm, const TCHAR *key,

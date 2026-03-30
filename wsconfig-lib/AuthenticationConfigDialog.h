@@ -27,10 +27,13 @@
 
 #include "gui/BaseDialog.h"
 #include "gui/CheckBox.h"
+#include "gui/ComboBox.h"
 #include "gui/TextBox.h"
 #include "server-config-lib/ServerConfig.h"
 #include "server-config-lib/PortConfig.h"
 #include "PasswordControl.h"
+
+#include <vector>
 
 // Consolidated authentication settings dialog (Phase 3 redesign).
 // Combines VNC password auth, Windows auth mode, and control interface auth
@@ -46,6 +49,9 @@ public:
   // Set the per-port config to edit; call before updateUI().
   void setPortConfig(PortConfig *pc) { m_portConfig = pc; }
 
+  // Refresh the port selector combo with the given port list.
+  void refreshPortSelector(const std::vector<PortConfig> &ports, int selectedIndex);
+
   // BaseDialog overrides
   virtual BOOL onInitDialog();
   virtual BOOL onCommand(UINT controlID, UINT notificationID);
@@ -59,6 +65,9 @@ public:
 private:
   void initControls();
   void updateControlDependencies();
+
+  // Port selector handler (dropdown inside this tab)
+  void onPortSelectorChange();
 
   // VNC password auth handlers
   void onUseAuthenticationClick();
@@ -81,6 +90,12 @@ private:
 protected:
   ServerConfig *m_config;
   PortConfig   *m_portConfig;  // per-port config being edited
+
+  // Port selector combo — created programmatically inside this tab
+  static const UINT IDC_PORT_SELECTOR_COMBO = 1200;
+  static const UINT IDC_PORT_SELECTOR_LABEL = 1201;
+  ComboBox m_portSelector;
+  HWND m_portSelectorLabel;
 
   // VNC auth controls
   CheckBox m_useAuthentication;

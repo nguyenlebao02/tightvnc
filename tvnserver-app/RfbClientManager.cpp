@@ -108,6 +108,27 @@ Desktop *RfbClientManager::onClientAuth(RfbClient *client)
   // Adding to the authorized list.
   m_clientList.push_back(client);
 
+  // Enforce per-user connection limit (Windows auth only)
+  const StringStorage &newUser = client->getAuthenticatedUsername();
+  if (newUser.getLength() > 0) {
+    int maxPerUser = client->getPortConfig().getMaxConnectionsPerUser();
+    if (maxPerUser > 0) {
+      int portNumber = client->getPortConfig().getPort();
+      int count = 0;
+      for (ClientListIter it = m_clientList.begin();
+           it != m_clientList.end(); it++) {
+        if ((*it)->getAuthenticatedUsername().isEqualTo(&newUser) &&
+            (*it)->getPortConfig().getPort() == portNumber) {
+          ++count;
+        }
+      }
+      if (count > maxPerUser) {
+        m_clientList.remove(client);
+        throw Exception(_T("Max connections per user exceeded on this port"));
+      }
+    }
+  }
+
   if (m_desktop == 0 && !m_clientList.empty()) {
     // Create WinDesktop and notify listeners that the first client has been
     // connected.
