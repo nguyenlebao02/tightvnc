@@ -164,7 +164,7 @@ void RfbInitializer::doAuth(UINT32 authType)
   } else if (authType == AuthDefs::NONE) {
     doAuthNone();
   } else {
-    throw Exception(_T("Unsupported authentication type"));
+    throw AuthException(_T("Unsupported authentication type"));
   }
   // Perform additional work via a listener.
   m_extAuthListener->onCheckAccessControl(m_client);
