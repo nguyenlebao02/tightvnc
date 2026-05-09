@@ -33,8 +33,10 @@
 #include "util/AnsiStringStorage.h"
 #include "tvnserver-app/NamingDefs.h"
 #include "win-auth-lib/WinAuthenticator.h"
+#include "util/VncPassCrypt.h"
 
 #include <stdlib.h>
+#include <time.h>
 #include <vector>
 
 RfbInitializer::RfbInitializer(Channel *stream,
@@ -161,6 +163,8 @@ void RfbInitializer::doAuth(UINT32 authType)
 {
   if (authType == AuthDefs::EXTERNAL) {
     doWinAuth();
+  } else if (authType == AuthDefs::VNC) {
+    doVncAuth();
   } else if (authType == AuthDefs::NONE) {
     doAuthNone();
   } else {
@@ -176,6 +180,44 @@ void RfbInitializer::doAuth(UINT32 authType)
 
 void RfbInitializer::doAuthNone()
 {
+}
+
+void RfbInitializer::doVncAuth()
+{
+  ServerConfig *srvConf = Configurator::getInstance()->getServerConfig();
+  if (!srvConf->hasPrimaryPassword()) {
+    throw AuthException(_T("VNC password is not set"));
+  }
+
+  // Decrypt stored password
+  VncPassCrypt vncPassCrypt;
+  unsigned char cryptedPass[8];
+  srvConf->getPrimaryPassword(cryptedPass);
+  vncPassCrypt.updatePlain(cryptedPass);
+
+  // Generate random challenge
+  UINT8 challenge[16];
+  srand((unsigned int)time(0) ^ (unsigned int)GetCurrentProcessId());
+  for (int i = 0; i < 16; i++) {
+    challenge[i] = (UINT8)(rand() & 0xFF);
+  }
+
+  // Send challenge to client
+  m_output->writeFully(challenge, 16);
+
+  // Read response from client
+  UINT8 response[16];
+  m_input->readFully(response, 16);
+
+  // Verify challenge response
+  if (!vncPassCrypt.challengeAndResponseIsValid(challenge, response)) {
+    throw AuthException(_T("Authentication failed"));
+  }
+
+  // VNC auth succeeded — grant full control
+  m_winAuthUsed = false;
+  m_viewOnlyAuth = false;
+  m_clientPermissions = ClientPermissions(ClientPermissions::PERM_FULL_CONTROL);
 }
 
 void RfbInitializer::doWinAuth()
@@ -281,34 +323,37 @@ void RfbInitializer::doWinAuth()
 void RfbInitializer::initAuthenticate()
 {
   try {
-    // Determine effective security type — always VNC type (which routes to
-    // doTightAuth() for TIGHT-capable clients where Windows auth is offered).
-    UINT32 primSecType = SecurityDefs::VNC;
-    if (!m_authAllowed) {
-      primSecType = SecurityDefs::NONE;
-    }
     // Here the protocol varies between versions 3.3 and 3.7+.
     if (m_minorVerNum >= 7) {
-      // Send a list with two security types -- VNC-compatible security type
-      // and a special code allowing to enable TightVNC protocol extensions.
-      m_output->writeUInt8(2);
-      m_output->writeUInt8(primSecType);
-      m_output->writeUInt8(SecurityDefs::TIGHT);
-      // Read what the client has actually selected.
-      UINT8 clientSecType = m_input->readUInt8();
-      if (clientSecType == SecurityDefs::TIGHT) {
-        m_tightEnabled = true;
-        doTightAuth();
-      } else {
-        if (clientSecType != primSecType) {
-          throw Exception(_T("Security types do not match"));
+      if (m_authAllowed) {
+        // Offer VNC(2) for standard viewers (RealVNC, UltraVNC, etc.)
+        // and TIGHT(16) for Windows auth with per-user permissions.
+        m_output->writeUInt8(2);
+        m_output->writeUInt8(SecurityDefs::VNC);
+        m_output->writeUInt8(SecurityDefs::TIGHT);
+        UINT8 clientSecType = m_input->readUInt8();
+        if (clientSecType == SecurityDefs::TIGHT) {
+          m_tightEnabled = true;
+          doTightAuth();
+        } else if (clientSecType == SecurityDefs::VNC) {
+          doAuth(AuthDefs::VNC);
+        } else {
+          throw AuthException(_T("Unsupported security type"));
         }
-        doAuth(AuthDefs::convertFromSecurityType(clientSecType));
+      } else {
+        // Auth not allowed (e.g. loopback) — offer NONE
+        m_output->writeUInt8(1);
+        m_output->writeUInt8(SecurityDefs::NONE);
+        UINT8 clientSecType = m_input->readUInt8();
+        if (clientSecType != SecurityDefs::NONE) {
+          throw AuthException(_T("Security types do not match"));
+        }
+        doAuth(AuthDefs::NONE);
       }
     } else {
-      // Just tell the client we will use the configured security type.
-      m_output->writeUInt32(primSecType);
-      doAuth(AuthDefs::convertFromSecurityType(primSecType));
+      // Protocol 3.3: only supported for auth-disabled (loopback) connections
+      m_output->writeUInt32(SecurityDefs::NONE);
+      doAuth(AuthDefs::NONE);
     }
   } catch (AuthException &e) {
     if (m_minorVerNum >= 8) {

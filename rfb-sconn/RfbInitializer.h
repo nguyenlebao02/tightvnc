@@ -85,6 +85,7 @@ protected:
   void doTightAuth();
   void doAuthNone();
   void doWinAuth();
+  void doVncAuth();
 
   // Calls the onCheckForBan() function by the external listener
   // @throw AuthException if current is banned.
