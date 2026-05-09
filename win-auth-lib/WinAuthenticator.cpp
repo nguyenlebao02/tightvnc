@@ -220,13 +220,23 @@ WinAuthResult WinAuthenticator::performAuth(
     return result;
   }
 
-  // Close token as soon as we have the groups
+  StringStorage canonicalUsername;
+  StringStorage canonicalDomain;
+  bool hasCanonicalName = getCanonicalUserName(&canonicalUsername,
+                                               &canonicalDomain);
+
+  // Close token as soon as we have the groups and canonical name
   closeToken();
 
   // Step 3: Resolve permissions from rules
   result.permissions = resolvePermissions(groups, rules, defaultPerms);
-  result.username.setString(username);
-  result.domain.setString(domain != NULL ? domain : _T(""));
+  if (hasCanonicalName) {
+    result.username = canonicalUsername;
+    result.domain = canonicalDomain;
+  } else {
+    result.username.setString(username);
+    result.domain.setString(domain != NULL ? domain : _T(""));
+  }
 
   // Step 4: Check if denied
   if (result.permissions.isDenied()) {
@@ -253,6 +263,43 @@ void WinAuthenticator::closeToken()
     CloseHandle(m_token);
     m_token = NULL;
   }
+}
+
+bool WinAuthenticator::getCanonicalUserName(StringStorage *username,
+                                            StringStorage *domain)
+{
+  if (m_token == NULL) {
+    return false;
+  }
+
+  DWORD infoSize = 0;
+  GetTokenInformation(m_token, TokenUser, NULL, 0, &infoSize);
+  if (infoSize == 0) {
+    return false;
+  }
+
+  std::vector<BYTE> buffer(infoSize);
+  TOKEN_USER *tokenUser = (TOKEN_USER *)&buffer[0];
+  if (!GetTokenInformation(m_token, TokenUser, tokenUser, infoSize, &infoSize)) {
+    return false;
+  }
+
+  TCHAR name[256] = { 0 };
+  TCHAR domainName[256] = { 0 };
+  DWORD nameSize = 256;
+  DWORD domainSize = 256;
+  SID_NAME_USE sidType;
+
+  if (!LookupAccountSid(NULL, tokenUser->User.Sid,
+                        name, &nameSize,
+                        domainName, &domainSize,
+                        &sidType)) {
+    return false;
+  }
+
+  username->setString(name);
+  domain->setString(domainName);
+  return true;
 }
 
 bool WinAuthenticator::isGuestToken()

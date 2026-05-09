@@ -75,6 +75,8 @@ public:
   void closeToken();
 
 private:
+  bool getCanonicalUserName(StringStorage *username, StringStorage *domain);
+
   // Check if the authenticated token belongs to the Guest account (RID 501).
   // Windows maps non-existent users to Guest when Guest is enabled.
   bool isGuestToken();

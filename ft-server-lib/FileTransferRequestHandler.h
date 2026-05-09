@@ -121,6 +121,7 @@ protected:
   //
 
   bool getDirectorySize(const TCHAR *pathname, UINT64 *dirSize);
+  bool getDirectorySizeDepth(const TCHAR *pathname, UINT64 *dirSize, int depth);
 
 protected:
   /**

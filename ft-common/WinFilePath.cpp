@@ -54,7 +54,11 @@ void WinFilePath::setString(const TCHAR *string)
 {
   StringStorage str(string);
   if (!str.isEmpty()) {
-    if (str.findLast('/') == 0) {
+    // Detect both POSIX root "/" and Windows drive roots like "C:" or "C:\"
+    const TCHAR *rawStr = str.getString();
+    if (str.findLast('/') == 0 ||
+        (str.getLength() >= 2 && rawStr[1] == _T(':') &&
+         (str.getLength() == 2 || (str.getLength() == 3 && rawStr[2] == _T('\\'))))) {
       m_parentPathIsRoot = true;
     }
     str.replaceChar(_T('/'), _T('\\'));

@@ -29,6 +29,8 @@
 #include "thread/AutoLock.h"
 #include "rfb/VendorDefs.h"
 
+static const UINT32 MAX_CLIENT_CLIPBOARD_BYTES = 4 * 1024 * 1024;
+
 ClipboardExchange::ClipboardExchange(RfbCodeRegistrator *codeRegtor,
                                      Desktop *desktop,
                                      RfbOutputGate *output,
@@ -86,14 +88,25 @@ void ClipboardExchange::onRequest(UINT32 reqCode, RfbInputGate *input)
 void ClipboardExchange::onRequestWorker(bool utf8flag, RfbInputGate *input)
 {
   UINT32 length = input->readUInt32();
+  if (length > MAX_CLIENT_CLIPBOARD_BYTES) {
+    throw Exception(_T("Clipboard payload is too large"));
+  }
+  // Check permission BEFORE allocating/reading payload.
+  // Consume bytes on denial to maintain stream synchronization.
+  if (m_viewOnly || !m_permissions.canClipboard()) {
+    if (length > 0) {
+      std::vector<char> discard(length);
+      input->readFully(&discard.front(), length);
+    }
+    throw Exception(_T("Clipboard permission denied for this user"));
+  }
 
   std::vector<char> charBuff(length + 1);
 
-  input->readFully(&charBuff.front(), length);
-  charBuff[length] = '\0';
-  if (m_viewOnly || !m_permissions.canClipboard()) {
-    return;
+  if (length != 0) {
+    input->readFully(&charBuff.front(), length);
   }
+  charBuff[length] = '\0';
 
   StringStorage clipText;
   if (utf8flag) {
@@ -128,47 +141,53 @@ void ClipboardExchange::execute()
   while (!isTerminating()) {
     m_newClipWaiter.waitForEvent();
 
-    if (m_hasNewClip && !isTerminating() && !m_viewOnly && m_permissions.canClipboard()) {
+    if (!isTerminating() && !m_viewOnly && m_permissions.canClipboard()) {
+      // Check and clear m_hasNewClip under lock to avoid TOCTOU race
+      // where sendClipboard() sets m_hasNewClip between the check and clear.
+      bool hasClip = false;
+      StringStorage clipCopy;
+      {
+        AutoLock al(&m_storedClipMut);
+        if (m_hasNewClip) {
+          m_hasNewClip = false;
+          clipCopy = m_storedClip;
+          hasClip = true;
+        }
+      }
 
-      try {
-        const char * data;
-        size_t length;
-        AutoLock al(m_output);
-        if (m_isUtf8ClipboardEnabled) {
-          m_output->writeUInt32(ServerMsgDefs::SERVER_CUT_TEXT_UTF8); // type
-          Utf8StringStorage charBuff;
-          {
-            AutoLock al(&m_storedClipMut);
-            charBuff.fromStringStorage(&m_storedClip);
-            m_hasNewClip = false;
+      if (hasClip) {
+        try {
+          const char * data;
+          size_t length;
+          AutoLock al(m_output);
+          if (m_isUtf8ClipboardEnabled) {
+            m_output->writeUInt32(ServerMsgDefs::SERVER_CUT_TEXT_UTF8);
+            Utf8StringStorage charBuff;
+            charBuff.fromStringStorage(&clipCopy);
+            data = charBuff.getString();
+            length = charBuff.getLength();
+            m_log->debug(_T("Sending Utf8 Clipboard, payload length %d"), length);
+            m_output->writeUInt32((UINT32)length);
+            m_output->writeFully(data, length);
           }
-          data = charBuff.getString();
-          length = charBuff.getLength();
-		      m_log->debug(_T("Sending Utf8 Clipboard, payload length %d"), length);
-          m_output->writeUInt32((UINT32)length);
-          m_output->writeFully(data, length);
-        }
-        else {
-          m_output->writeUInt8(ServerMsgDefs::SERVER_CUT_TEXT); // type
-          m_output->writeUInt8(0); // pad
-          m_output->writeUInt16(0); // pad
-          AnsiStringStorage charBuff;
-          {
-            AutoLock al(&m_storedClipMut);
-            charBuff.fromStringStorage(&m_storedClip);
-            m_hasNewClip = false;
+          else {
+            m_output->writeUInt8(ServerMsgDefs::SERVER_CUT_TEXT);
+            m_output->writeUInt8(0);
+            m_output->writeUInt16(0);
+            AnsiStringStorage charBuff;
+            charBuff.fromStringStorage(&clipCopy);
+            data = charBuff.getString();
+            length = charBuff.getLength();
+            m_log->debug(_T("Sending Clipboard, payload length %d"), length);
+            m_output->writeUInt32((UINT32)length);
+            m_output->writeFully(data, length);
           }
-          data = charBuff.getString();
-          length = charBuff.getLength();
-		      m_log->debug(_T("Sending Clipboard, payload length %d"), length);
-          m_output->writeUInt32((UINT32)length);
-          m_output->writeFully(data, length);
+          m_output->flush();
+        } catch (Exception &e) {
+          m_log->error(_T("The clipboard thread force to terminate because")
+                     _T(" it caught the error: %s"), e.getMessage());
+          terminate();
         }
-        m_output->flush();
-      } catch (Exception &e) {
-        m_log->error(_T("The clipboard thread force to terminate because")
-                   _T(" it caught the error: %s"), e.getMessage());
-        terminate();
       }
     }
   }

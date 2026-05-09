@@ -119,7 +119,8 @@ void RfbInitializer::checkForLoopback()
   m_client->getSocketAddr(&sockAddr);
   struct sockaddr_in addrIn = sockAddr.getSockAddr();
 
-  bool isLoopback = (unsigned long)addrIn.sin_addr.S_un.S_addr == 16777343;
+  // Check entire 127.0.0.0/8 loopback range, not just 127.0.0.1
+  bool isLoopback = (addrIn.sin_addr.S_un.S_un_b.s_b1 == 127);
 
   ServerConfig *srvConf = Configurator::getInstance()->getServerConfig();
   if (isLoopback && !srvConf->isLoopbackConnectionsAllowed()) {
@@ -249,30 +250,29 @@ void RfbInitializer::doWinAuth()
     rules,
     defaultPerms);
 
-  // Securely clear all password buffers
+  // Securely clear password buffers we own.
+  // mutablePass is already zeroed by WinAuthenticator::performAuth().
   SecureZeroMemory(&passAnsi[0], passAnsi.size());
-  if (passStr.getLength() > 0) {
-    SecureZeroMemory((void *)passStr.getString(),
-                     passStr.getLength() * sizeof(TCHAR));
-  }
+  SecureZeroMemory(&mutablePass[0], mutablePass.size() * sizeof(TCHAR));
 
   if (!result.success) {
     // Notify about failed auth attempt
     m_extAuthListener->onAuthFailed(m_client);
 
-    StringStorage clientAddr;
-    m_client->getPeerHost(&clientAddr);
-    StringStorage errMsg;
-    errMsg.format(_T("Windows auth failed for '%s' from %s: %s"),
-                  user.getString(), clientAddr.getString(),
-                  result.errorMessage.getString());
-    throw AuthException(errMsg.getString());
+    // Throw generic error to client — detailed reason is server-side only
+    throw AuthException(_T("Authentication failed"));
   }
 
   // Auth succeeded — store permissions and mark as Windows auth
   m_winAuthUsed = true;
   m_clientPermissions = result.permissions;
-  m_authenticatedUsername = username;  // Store full DOMAIN\user form
+  if (result.domain.getLength() > 0) {
+    m_authenticatedUsername.format(_T("%s\\%s"),
+                                   result.domain.getString(),
+                                   result.username.getString());
+  } else {
+    m_authenticatedUsername = result.username;
+  }
 
   // Set view-only flag for backward compatibility
   m_viewOnlyAuth = m_clientPermissions.isViewOnly();
@@ -311,16 +311,19 @@ void RfbInitializer::initAuthenticate()
       doAuth(AuthDefs::convertFromSecurityType(primSecType));
     }
   } catch (AuthException &e) {
-    // FIXME: The authentication result must be sent in protocols 3.3 and 3.7
-    //        as well, unless the authentication was set to AuthDefs::NONE.
     if (m_minorVerNum >= 8) {
+      // Protocol 3.8+: send 4-byte failure + error message
       AnsiStringStorage reason(&StringStorage(e.getMessage()));
       unsigned int reasonLen = (unsigned int)reason.getLength();
       _ASSERT(reasonLen == reason.getLength());
 
-      m_output->writeUInt32(1); // FIXME: Use a named constant instead of 1.
+      m_output->writeUInt32(1);
       m_output->writeUInt32(reasonLen);
       m_output->writeFully(reason.getString(), reasonLen);
+    } else {
+      // Protocol 3.3/3.7: send 4-byte failure result so client
+      // knows auth failed instead of hanging until timeout.
+      m_output->writeUInt32(1);
     }
     throw;
   }

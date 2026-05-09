@@ -44,6 +44,17 @@
 #include "win-system/SystemException.h"
 #include "rfb/VendorDefs.h"
 
+static const UINT32 MAX_FT_PATH_BYTES = 32768;
+static const UINT32 MAX_FT_CHUNK_BYTES = 4 * 1024 * 1024;
+
+// Replace CR/LF in log strings to prevent log forging
+static void sanitizeLogString(StringStorage *out, const TCHAR *src)
+{
+  out->setString(src);
+  out->replaceChar(_T('\r'), _T(' '));
+  out->replaceChar(_T('\n'), _T(' '));
+}
+
 FileTransferRequestHandler::FileTransferRequestHandler(RfbCodeRegistrator *registrator,
                                                        RfbOutputGate *output,
                                                        Desktop *desktop,
@@ -139,6 +150,9 @@ void FileTransferRequestHandler::onRequest(UINT32 reqCode, RfbInputGate *backGat
   m_input = backGate;
 
   try {
+    // Early coarse permission check before parsing any request payload
+    checkAccess();
+
     switch (reqCode) {
     case FTMessage::COMPRESSION_SUPPORT_REQUEST:
       compressionSupportRequested();
@@ -226,7 +240,7 @@ void FileTransferRequestHandler::fileListRequested()
   {
     requestedCompressionLevel = m_input->readUInt8();
 
-    m_input->readUTF8(&fullPathName);
+    m_input->readUTF8(&fullPathName, MAX_FT_PATH_BYTES);
   }
 
   m_log->message(_T("File list of folder '%s' requested"),
@@ -313,7 +327,7 @@ void FileTransferRequestHandler::mkDirRequested()
   WinFilePath folderPath;
 
   {
-    m_input->readUTF8(&folderPath);
+    m_input->readUTF8(&folderPath, MAX_FT_PATH_BYTES);
   } // end of reading block.
 
   m_log->message(_T("mkdir \"%s\" command requested"), folderPath.getString());
@@ -348,7 +362,7 @@ void FileTransferRequestHandler::rmFileRequested()
   WinFilePath fullPathName;
 
   {
-    m_input->readUTF8(&fullPathName);
+    m_input->readUTF8(&fullPathName, MAX_FT_PATH_BYTES);
   } // end of reading block.
 
   m_log->message(_T("rm \"%s\" command requested"), fullPathName.getString());
@@ -380,8 +394,8 @@ void FileTransferRequestHandler::mvFileRequested()
   WinFilePath newFileName;
 
   {
-    m_input->readUTF8(&oldFileName);
-    m_input->readUTF8(&newFileName);
+    m_input->readUTF8(&oldFileName, MAX_FT_PATH_BYTES);
+    m_input->readUTF8(&newFileName, MAX_FT_PATH_BYTES);
   } // end of reading block.
 
   m_log->message(_T("move \"%s\" \"%s\" command requested"), oldFileName.getString(), newFileName.getString());
@@ -409,7 +423,7 @@ void FileTransferRequestHandler::dirSizeRequested()
   WinFilePath fullPathName;
 
   {
-    m_input->readUTF8(&fullPathName);
+    m_input->readUTF8(&fullPathName, MAX_FT_PATH_BYTES);
   } // end of reading block.
 
   m_log->message(_T("Size of folder '%s\' requested"),
@@ -441,7 +455,7 @@ void FileTransferRequestHandler::md5Requested()
   UINT64 dataLen;
 
   {
-    m_input->readUTF8(&fullPathName);
+    m_input->readUTF8(&fullPathName, MAX_FT_PATH_BYTES);
 
     offset = m_input->readUInt64();
     dataLen = m_input->readUInt64();
@@ -481,6 +495,9 @@ void FileTransferRequestHandler::md5Requested()
 
   while (bytesToReadTotal > 0) {
     bytesRead = fileInputStream.read(&buffer.front(), bytesToRead);
+    if (bytesRead == 0) {
+      throw IOException(_T("Unexpected end of file in MD5 calculation"));
+    }
     bytesReadTotal += bytesRead;
     bytesToReadTotal -= bytesRead;
 
@@ -514,7 +531,7 @@ void FileTransferRequestHandler::uploadStartRequested()
   UINT64 initialOffset;
 
   {
-    m_input->readUTF8(&fullPathName);
+    m_input->readUTF8(&fullPathName, MAX_FT_PATH_BYTES);
     uploadFlags = m_input->readUInt8();
     initialOffset = m_input->readUInt64();
   }
@@ -540,23 +557,40 @@ void FileTransferRequestHandler::uploadStartRequested()
     throw FileTransferException(_T("Cannot upload file to root folder"));
   }
 
-  m_uploadFile = new File(fullPathName.getString());
-
   //
-  // Trying to create file or overwrite existing
+  // Use locals to avoid leaving dangling members on partial failure
   //
 
-  if ((uploadFlags & 0x1) && (!m_uploadFile->truncate())) {
-    throw SystemException();
+  File *newUploadFile = new File(fullPathName.getString());
+  WinFileChannel *newOutputStream = NULL;
+
+  try {
+    //
+    // Trying to create file or overwrite existing
+    //
+
+    if ((uploadFlags & 0x1) && (!newUploadFile->truncate())) {
+      throw SystemException();
+    }
+
+    //
+    // Trying to open file and seek to initial file position
+    //
+    newOutputStream = new WinFileChannel(fullPathName.getString(),
+                                         F_WRITE,
+                                         FM_OPEN);
+    newOutputStream->seek(initialOffset);
+  } catch (...) {
+    delete newUploadFile;
+    delete newOutputStream;
+    throw;
   }
 
   //
-  // Trying to open file and seek to initial file position
+  // All operations succeeded — commit to members
   //
-  m_fileOutputStream = new WinFileChannel(fullPathName.getString(),
-                                          F_WRITE,
-                                          FM_OPEN);
-  m_fileOutputStream->seek(initialOffset);
+  m_uploadFile = newUploadFile;
+  m_fileOutputStream = newOutputStream;
 
   //
   // Send reply
@@ -584,14 +618,20 @@ void FileTransferRequestHandler::uploadDataRequested()
   compressionLevel = m_input->readUInt8();
   compressedSize = m_input->readUInt32();
   uncompressedSize = m_input->readUInt32();
-  std::vector<char> buffer(compressedSize);
-  if (compressedSize != 0) {
-    m_input->readFully(&buffer.front(), compressedSize);
+  if (compressionLevel > 1 ||
+      compressedSize > MAX_FT_CHUNK_BYTES ||
+      uncompressedSize > MAX_FT_CHUNK_BYTES) {
+    throw FileTransferException(_T("Upload chunk is too large"));
   }
 
   m_log->info(_T("upload data (cs = %d, us = %d) requested"), compressedSize, uncompressedSize);
 
   checkAccess();
+
+  std::vector<char> buffer(compressedSize);
+  if (compressedSize != 0) {
+    m_input->readFully(&buffer.front(), compressedSize);
+  }
 
   if (m_uploadFile == NULL) {
     throw FileTransferException(_T("No active upload at the moment"));
@@ -599,6 +639,9 @@ void FileTransferRequestHandler::uploadDataRequested()
 
   if (compressedSize != 0) {
     if (compressionLevel == 0) {
+      if (compressedSize != uncompressedSize) {
+        throw FileTransferException(_T("Invalid uncompressed upload chunk size"));
+      }
       DataOutputStream dataOutStream(m_fileOutputStream);
       dataOutStream.writeFully(&buffer.front(), uncompressedSize);
     } else {
@@ -648,9 +691,11 @@ void FileTransferRequestHandler::uploadEndRequested()
   // Close file output stream
   //
 
-  try {
-    m_fileOutputStream->close();
-  } catch (...) { }
+  if (m_fileOutputStream != NULL) {
+    try {
+      m_fileOutputStream->close();
+    } catch (...) { }
+  }
 
   //
   // Trying to set modification time
@@ -698,7 +743,7 @@ void FileTransferRequestHandler::downloadStartRequested()
   //
 
   {
-    m_input->readUTF8(&fullPathName);
+    m_input->readUTF8(&fullPathName, MAX_FT_PATH_BYTES);
     initialOffset = m_input->readUInt64();
   } // end of reading block.
 
@@ -757,6 +802,10 @@ void FileTransferRequestHandler::downloadDataRequested()
     requestedCompressionLevel = m_input->readUInt8();
     dataSize = m_input->readUInt32();
   } // end of reading block.
+
+  if (requestedCompressionLevel > 1 || dataSize > MAX_FT_CHUNK_BYTES) {
+    throw FileTransferException(_T("Download chunk is too large"));
+  }
 
   m_log->info(_T("download %d bytes (comp flag = %d) requested"), dataSize, requestedCompressionLevel);
 
@@ -878,6 +927,16 @@ void FileTransferRequestHandler::lastRequestFailed(const TCHAR *description)
 
 bool FileTransferRequestHandler::getDirectorySize(const TCHAR *pathname, UINT64 *dirSize)
 {
+  return getDirectorySizeDepth(pathname, dirSize, 0);
+}
+
+bool FileTransferRequestHandler::getDirectorySizeDepth(const TCHAR *pathname, UINT64 *dirSize, int depth)
+{
+  static const int MAX_RECURSION_DEPTH = 64;
+
+  if (depth > MAX_RECURSION_DEPTH) {
+    return false;
+  }
   UINT64 currentDirSize = 0;
   UINT32 filesCount = 0;
   UINT32 dataSize = 0;
@@ -910,7 +969,7 @@ bool FileTransferRequestHandler::getDirectorySize(const TCHAR *pathname, UINT64 
 
         subfile.getPath(&subDirPath);
 
-        if (getDirectorySize(subDirPath.getString(), &subDirSize)) {
+        if (getDirectorySizeDepth(subDirPath.getString(), &subDirSize, depth + 1)) {
           currentDirSize += subDirSize;
         }  // if it got sub directory size
       } else {
