@@ -144,6 +144,14 @@ BOOL ConfigDialog::onInitDialog()
   // Load per-port configs into editable copy
   ServerConfig *srvConfig = m_config->getServerConfig();
   m_portConfigs = srvConfig->getAllPortConfigs();
+
+  // Ensure at least a default port config so the port selector is never empty
+  if (m_portConfigs.empty()) {
+    PortConfig defaultPc;
+    defaultPc.setPort(srvConfig->getRfbPort());
+    m_portConfigs.push_back(defaultPc);
+  }
+
   m_selectedPortIndex = 0;
 
   m_tabControl.addTab(NULL, _T("Temp"));

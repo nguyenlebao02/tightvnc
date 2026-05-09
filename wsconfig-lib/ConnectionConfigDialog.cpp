@@ -96,25 +96,7 @@ void ConnectionConfigDialog::initControls()
 {
   HWND hwnd = m_ctrlThis.getWindow();
 
-  // RFB port controls
-  m_acceptRfbConnections.setWindow(GetDlgItem(hwnd, IDC_ACCEPT_RFB_CONNECTIONS));
-  m_rfbPort.setWindow(GetDlgItem(hwnd, IDC_RFB_PORT));
-  m_rfbPortSpin.setWindow(GetDlgItem(hwnd, IDC_RFB_PORT_SPIN));
-
-  m_rfbPortSpin.setBuddy(&m_rfbPort);
-  m_rfbPortSpin.setAccel(0, 1);
-  m_rfbPortSpin.setRange32(1, 65535);
-
-  // HTTP port controls
-  m_acceptHttpConnections.setWindow(GetDlgItem(hwnd, IDC_ACCEPT_HTTP_CONNECTIONS));
-  m_httpPort.setWindow(GetDlgItem(hwnd, IDC_HTTP_PORT));
-  m_httpPortSpin.setWindow(GetDlgItem(hwnd, IDC_HTTP_PORT_SPIN));
-
-  m_httpPortSpin.setBuddy(&m_httpPort);
-  m_httpPortSpin.setAccel(0, 1);
-  m_httpPortSpin.setRange32(1, 65535);
-
-  // Extra port mappings controls
+  // Port mappings controls
   m_mappingsListBox.setWindow(GetDlgItem(hwnd, IDC_MAPPINGS));
   m_editButton.setWindow(GetDlgItem(hwnd, IDC_EDIT_PORT));
   m_removeButton.setWindow(GetDlgItem(hwnd, IDC_REMOVE_PORT));
@@ -133,14 +115,6 @@ static void buildPortConfigDisplayString(const PortConfig *pc, StringStorage *ou
 void ConnectionConfigDialog::updateUI()
 {
   ServerConfig *config = Configurator::getInstance()->getServerConfig();
-
-  // Load RFB settings
-  m_acceptRfbConnections.check(config->isAcceptingRfbConnections());
-  m_rfbPort.setSignedInt(config->getRfbPort());
-
-  // Load HTTP settings
-  m_acceptHttpConnections.check(config->isAcceptingHttpConnections());
-  m_httpPort.setSignedInt(config->getHttpPort());
 
   // Load port mappings into listbox — prefer unified PortConfig list
   m_mappingsListBox.clear();
@@ -161,65 +135,27 @@ void ConnectionConfigDialog::updateUI()
       m_mappingsListBox.insertString((int)i, mappingString.getString());
     }
   }
-
-  // Sync enabled state of dependent controls
-  updatePortDependencies();
-
-  m_rfbPortSpin.invalidate();
-  m_httpPortSpin.invalidate();
 }
 
 void ConnectionConfigDialog::apply()
 {
   ServerConfig *config = Configurator::getInstance()->getServerConfig();
 
-  // Save RFB settings
-  config->acceptRfbConnections(m_acceptRfbConnections.isChecked());
+  // Always accept RFB connections
+  config->acceptRfbConnections(true);
+  // Disable HTTP by default (no UI for it)
+  config->acceptHttpConnections(false);
 
-  StringStorage rfbPortText;
-  m_rfbPort.getText(&rfbPortText);
-  int rfbPort = 0;
-  StringParser::parseInt(rfbPortText.getString(), &rfbPort);
-  config->setRfbPort(rfbPort);
-
-  // Save HTTP settings
-  config->acceptHttpConnections(m_acceptHttpConnections.isChecked());
-
-  StringStorage httpPortText;
-  m_httpPort.getText(&httpPortText);
-  int httpPort = 0;
-  StringParser::parseInt(httpPortText.getString(), &httpPort);
-  config->setHttpPort(httpPort);
-
-  // Save unified port configs to ServerConfig
+  // Save unified port configs to ServerConfig.
+  // ServerConfig::setAllPortConfigs syncs RFB port from the first entry.
   if (m_portConfigs != NULL) {
     config->setAllPortConfigs(*m_portConfigs);
   }
-  // Legacy extra ports are saved in-place through the PortMappingContainer pointer.
 }
 
 bool ConnectionConfigDialog::validateInput()
 {
-  if (!CommonInputValidation::validatePort(&m_rfbPort)) {
-    return false;
-  }
-  if (!CommonInputValidation::validatePort(&m_httpPort)) {
-    return false;
-  }
-
-  // Ports must differ when both are active
-  if (m_acceptHttpConnections.isChecked() && m_acceptHttpConnections.isEnabled()) {
-    int rfbPort = 0, httpPort = 0;
-    UIDataAccess::queryValueAsInt(&m_rfbPort, &rfbPort);
-    UIDataAccess::queryValueAsInt(&m_httpPort, &httpPort);
-    if (rfbPort == httpPort) {
-      CommonInputValidation::notifyValidationError(
-        &m_httpPort,
-        StringTable::getString(IDS_HTTP_RFB_PORTS_ARE_EQUAL));
-      return false;
-    }
-  }
-
+  // No inputs to validate — port mappings are validated in EditPortMappingDialog.
   return true;
 }
 
@@ -227,12 +163,6 @@ BOOL ConnectionConfigDialog::onCommand(UINT controlID, UINT notificationID)
 {
   if (notificationID == BN_CLICKED) {
     switch (controlID) {
-    case IDC_ACCEPT_RFB_CONNECTIONS:
-      onAcceptRfbConnectionsClick();
-      break;
-    case IDC_ACCEPT_HTTP_CONNECTIONS:
-      onAcceptHttpConnectionsClick();
-      break;
     case IDC_ADD_PORT:
       onAddButtonClick();
       break;
@@ -241,15 +171,6 @@ BOOL ConnectionConfigDialog::onCommand(UINT controlID, UINT notificationID)
       break;
     case IDC_REMOVE_PORT:
       onRemoveButtonClick();
-      break;
-    }
-  } else if (notificationID == EN_UPDATE) {
-    switch (controlID) {
-    case IDC_RFB_PORT:
-      onRfbPortUpdate();
-      break;
-    case IDC_HTTP_PORT:
-      onHttpPortUpdate();
       break;
     }
   } else if (controlID == IDC_MAPPINGS) {
@@ -263,45 +184,6 @@ BOOL ConnectionConfigDialog::onCommand(UINT controlID, UINT notificationID)
     }
   }
   return TRUE;
-}
-
-//
-// Enable/disable port edit fields based on checkbox state.
-//
-void ConnectionConfigDialog::updatePortDependencies()
-{
-  bool rfbEnabled = m_acceptRfbConnections.isChecked();
-  m_rfbPort.setEnabled(rfbEnabled);
-  m_rfbPortSpin.invalidate();
-
-  // HTTP checkbox itself is only meaningful when RFB is on
-  m_acceptHttpConnections.setEnabled(rfbEnabled);
-
-  bool httpEnabled = rfbEnabled && m_acceptHttpConnections.isChecked();
-  m_httpPort.setEnabled(httpEnabled);
-  m_httpPortSpin.invalidate();
-}
-
-void ConnectionConfigDialog::onAcceptRfbConnectionsClick()
-{
-  updatePortDependencies();
-  ((ConfigDialog *)m_parent)->updateApplyButtonState();
-}
-
-void ConnectionConfigDialog::onAcceptHttpConnectionsClick()
-{
-  updatePortDependencies();
-  ((ConfigDialog *)m_parent)->updateApplyButtonState();
-}
-
-void ConnectionConfigDialog::onRfbPortUpdate()
-{
-  ((ConfigDialog *)m_parent)->updateApplyButtonState();
-}
-
-void ConnectionConfigDialog::onHttpPortUpdate()
-{
-  ((ConfigDialog *)m_parent)->updateApplyButtonState();
 }
 
 void ConnectionConfigDialog::onMappingsSelChange()

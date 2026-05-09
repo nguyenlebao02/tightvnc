@@ -38,7 +38,7 @@
 #include <vector>
 
 // Dialog for the Connection tab (IDD_CONFIG_CONNECTION_PAGE).
-// Handles RFB port, HTTP port, and extra port mappings.
+// Handles port mappings (each port maps to a screen area).
 class ConnectionConfigDialog : public BaseDialog
 {
 public:
@@ -65,14 +65,8 @@ protected:
 
 private:
   void initControls();
-  // Enable/disable port fields based on checkbox state.
-  void updatePortDependencies();
 
   // Control event handlers
-  void onAcceptRfbConnectionsClick();
-  void onAcceptHttpConnectionsClick();
-  void onRfbPortUpdate();
-  void onHttpPortUpdate();
   void onAddButtonClick();
   void onEditButtonClick();
   void onRemoveButtonClick();
@@ -82,17 +76,7 @@ private:
 protected:
   BaseDialog *m_parent;
 
-  // RFB connection controls
-  CheckBox    m_acceptRfbConnections;
-  TextBox     m_rfbPort;
-  SpinControl m_rfbPortSpin;
-
-  // HTTP connection controls
-  CheckBox    m_acceptHttpConnections;
-  TextBox     m_httpPort;
-  SpinControl m_httpPortSpin;
-
-  // Extra port mappings controls
+  // Port mappings controls
   ListBox     m_mappingsListBox;
   Control     m_editButton;
   Control     m_removeButton;
