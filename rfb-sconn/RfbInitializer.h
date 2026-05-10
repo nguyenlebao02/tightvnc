@@ -33,6 +33,7 @@
 #include "rfb/PixelFormat.h"
 #include "server-config-lib/ClientPermissions.h"
 #include "server-config-lib/PortConfig.h"
+#include "network/socket/SchannelTlsStream.h"
 // External listeners
 #include "ClientAuthListener.h"
 
@@ -86,6 +87,8 @@ protected:
   void doAuthNone();
   void doWinAuth();
   void doVncAuth();
+  void doRa2Auth(int aesKeySize);
+  void doVeNCryptAuth();
 
   // Calls the onCheckForBan() function by the external listener
   // @throw AuthException if current is banned.
@@ -99,6 +102,10 @@ protected:
 
   DataOutputStream *m_output;
   DataInputStream *m_input;
+
+  Channel *m_rawStream;
+  SchannelTlsStream *m_tlsStream;
+  bool m_vencryptUsed;
 
   bool m_shared;
   unsigned int m_minorVerNum;

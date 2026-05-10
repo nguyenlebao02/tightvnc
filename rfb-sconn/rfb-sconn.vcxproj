@@ -380,6 +380,8 @@
     <ClCompile Include="RfbClient.cpp" />
     <ClCompile Include="RfbCodeRegistrator.cpp" />
     <ClCompile Include="RfbDispatcher.cpp" />
+    <ClCompile Include="Ra2Authenticator.cpp" />
+    <ClCompile Include="Ra2CryptoProvider.cpp" />
     <ClCompile Include="RfbInitializer.cpp" />
     <ClCompile Include="RreEncoder.cpp" />
     <ClCompile Include="TightEncoder.cpp" />
@@ -406,6 +408,8 @@
     <ClInclude Include="RfbCodeRegistrator.h" />
     <ClInclude Include="RfbDispatcher.h" />
     <ClInclude Include="RfbDispatcherListener.h" />
+    <ClInclude Include="Ra2Authenticator.h" />
+    <ClInclude Include="Ra2CryptoProvider.h" />
     <ClInclude Include="RfbInitializer.h" />
     <ClInclude Include="RreEncoder.h" />
     <ClInclude Include="TightEncoder.h" />

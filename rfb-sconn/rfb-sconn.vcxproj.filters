@@ -29,6 +29,12 @@
     <ClCompile Include="RfbDispatcher.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="Ra2Authenticator.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Ra2CryptoProvider.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="RfbInitializer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -101,6 +107,12 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="RfbDispatcherListener.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Ra2Authenticator.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Ra2CryptoProvider.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="RfbInitializer.h">

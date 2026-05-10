@@ -21,6 +21,9 @@
     <ClInclude Include="socket\SocketStream.h">
       <Filter>socket</Filter>
     </ClInclude>
+    <ClInclude Include="socket\SchannelTlsStream.h">
+      <Filter>socket</Filter>
+    </ClInclude>
     <ClInclude Include="socket\WindowsSocket.h">
       <Filter>socket</Filter>
     </ClInclude>
@@ -40,6 +43,9 @@
       <Filter>socket</Filter>
     </ClCompile>
     <ClCompile Include="socket\SocketStream.cpp">
+      <Filter>socket</Filter>
+    </ClCompile>
+    <ClCompile Include="socket\SchannelTlsStream.cpp">
       <Filter>socket</Filter>
     </ClCompile>
     <ClCompile Include="socket\WindowsSocket.cpp">

@@ -33,8 +33,23 @@ public:
   static const UINT32 INVALID = 0;
   static const UINT32 NONE = 1;
   static const UINT32 VNC = 2;
+  static const UINT32 RA2 = 5;
+  static const UINT32 RA2_256 = 6;
   static const UINT32 TIGHT = 16;
+  static const UINT32 VENCRYPT = 19;
   static UINT32 convertFromAuthType(UINT32 authType);
+};
+
+class VeNCryptDefs
+{
+public:
+  static const UINT32 PLAIN = 256;
+  static const UINT32 TLSNONE = 257;
+  static const UINT32 TLSVNC = 258;
+  static const UINT32 TLSPLAIN = 259;
+  static const UINT32 X509NONE = 260;
+  static const UINT32 X509VNC = 261;
+  static const UINT32 X509PLAIN = 262;
 };
 
 class AuthDefs

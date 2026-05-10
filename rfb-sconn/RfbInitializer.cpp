@@ -34,6 +34,8 @@
 #include "tvnserver-app/NamingDefs.h"
 #include "win-auth-lib/WinAuthenticator.h"
 #include "util/VncPassCrypt.h"
+#include "Ra2CryptoProvider.h"
+#include "Ra2Authenticator.h"
 
 #include <stdlib.h>
 #include <time.h>
@@ -52,7 +54,10 @@ RfbInitializer::RfbInitializer(Channel *stream,
   m_viewOnlyAuth(false),
   m_winAuthUsed(false),
   m_clientPermissions(ClientPermissions::PERM_FULL_CONTROL),
-  m_portConfig(portConfig ? *portConfig : PortConfig())
+  m_portConfig(portConfig ? *portConfig : PortConfig()),
+  m_rawStream(stream),
+  m_tlsStream(NULL),
+  m_vencryptUsed(false)
 {
   m_output = new DataOutputStream(stream);
   m_input = new DataInputStream(stream);
@@ -62,6 +67,7 @@ RfbInitializer::~RfbInitializer()
 {
   delete m_output;
   delete m_input;
+  delete m_tlsStream;
 }
 
 void RfbInitializer::authPhase()
@@ -320,23 +326,198 @@ void RfbInitializer::doWinAuth()
   m_viewOnlyAuth = m_clientPermissions.isViewOnly();
 }
 
+void RfbInitializer::doRa2Auth(int aesKeySize)
+{
+  Ra2CryptoProvider crypto;
+  if (!crypto.initialize()) {
+    throw AuthException(_T("RA2: crypto initialization failed"));
+  }
+  if (!crypto.loadOrCreateKeyPair()) {
+    throw AuthException(_T("RA2: key generation failed"));
+  }
+
+  Ra2Authenticator auth(m_input, m_output, &crypto);
+  StringStorage username;
+  StringStorage password;
+  if (!auth.performHandshake(&username, &password, aesKeySize)) {
+    throw AuthException(_T("RA2: handshake failed"));
+  }
+
+  // Check for ban after handshake but before credential validation
+  checkForBan();
+
+  // Split "DOMAIN\\username" if present
+  StringStorage domain;
+  StringStorage user;
+  const TCHAR *backslash = _tcschr(username.getString(), _T('\\'));
+  if (backslash != NULL) {
+    size_t domainLen = backslash - username.getString();
+    TCHAR *domBuf = new TCHAR[domainLen + 1];
+    _tcsncpy_s(domBuf, domainLen + 1, username.getString(), domainLen);
+    domBuf[domainLen] = 0;
+    domain.setString(domBuf);
+    delete[] domBuf;
+    user.setString(backslash + 1);
+  } else {
+    domain.setString(_T("."));
+    user.setString(username.getString());
+  }
+
+  // Copy password to mutable buffer for SecureZeroMemory
+  size_t passLen = password.getLength() + 1;
+  std::vector<TCHAR> mutablePass(passLen);
+  _tcscpy_s(&mutablePass[0], passLen, password.getString());
+
+  std::vector<GroupPermissionRule> rules = m_portConfig.getGroupRules();
+  UINT32 defaultPerms = m_portConfig.getDefaultWinAuthPermissions();
+
+  WinAuthenticator authenticator(NULL);
+  WinAuthResult result = authenticator.performAuth(
+    user.getString(),
+    &mutablePass[0],
+    domain.getString(),
+    rules,
+    defaultPerms);
+
+  SecureZeroMemory(&mutablePass[0], mutablePass.size() * sizeof(TCHAR));
+
+  // Also zero the password from Ra2Authenticator
+  TCHAR *passBuf = const_cast<TCHAR *>(password.getString());
+  size_t passCharLen = password.getLength();
+  SecureZeroMemory(passBuf, passCharLen * sizeof(TCHAR));
+
+  if (!result.success) {
+    m_extAuthListener->onAuthFailed(m_client);
+    throw AuthException(_T("Authentication failed"));
+  }
+
+  m_winAuthUsed = true;
+  m_clientPermissions = result.permissions;
+  if (result.domain.getLength() > 0) {
+    m_authenticatedUsername.format(_T("%s\\%s"),
+                                   result.domain.getString(),
+                                   result.username.getString());
+  } else {
+    m_authenticatedUsername = result.username;
+  }
+
+  m_viewOnlyAuth = m_clientPermissions.isViewOnly();
+
+  // Perform access control check and send auth result
+  m_extAuthListener->onCheckAccessControl(m_client);
+  m_output->writeUInt32(0);
+}
+
+void RfbInitializer::doVeNCryptAuth()
+{
+  // Phase 1: VeNCrypt version negotiation (0.2 only)
+  m_output->writeUInt8(0);
+  m_output->writeUInt8(2);
+
+  UINT8 clientMajor = m_input->readUInt8();
+  UINT8 clientMinor = m_input->readUInt8();
+
+  if (clientMajor != 0 || clientMinor > 2) {
+    m_output->writeUInt8(0xFF);
+    throw AuthException(_T("VeNCrypt: unsupported protocol version"));
+  }
+  m_output->writeUInt8(0x00);
+
+  // Phase 2: Sub-type negotiation
+  std::vector<UINT32> subTypes;
+  if (m_authAllowed) {
+    subTypes.push_back(VeNCryptDefs::TLSVNC);
+    subTypes.push_back(VeNCryptDefs::TLSPLAIN);
+  } else {
+    subTypes.push_back(VeNCryptDefs::TLSNONE);
+  }
+
+  m_output->writeUInt8((UINT8)subTypes.size());
+  for (size_t i = 0; i < subTypes.size(); i++) {
+    m_output->writeUInt32(subTypes[i]);
+  }
+
+  UINT32 chosenSubType = m_input->readUInt32();
+
+  bool valid = false;
+  for (size_t i = 0; i < subTypes.size(); i++) {
+    if (subTypes[i] == chosenSubType) {
+      valid = true;
+      break;
+    }
+  }
+  if (!valid) {
+    m_output->writeUInt8(0x00);
+    throw AuthException(_T("VeNCrypt: client selected unsupported sub-type"));
+  }
+
+  // Phase 3: TLS handshake + stream replacement
+  if (chosenSubType == VeNCryptDefs::TLSNONE ||
+      chosenSubType == VeNCryptDefs::TLSVNC ||
+      chosenSubType == VeNCryptDefs::TLSPLAIN) {
+
+    m_output->writeUInt8(0x01);
+
+    m_tlsStream = new SchannelTlsStream(m_rawStream);
+    try {
+      m_tlsStream->performHandshake();
+    } catch (Exception &e) {
+      delete m_tlsStream;
+      m_tlsStream = NULL;
+      throw AuthException(_T("VeNCrypt: TLS handshake failed"));
+    }
+
+    // Replace streams — all subsequent I/O goes through TLS
+    DataOutputStream *newOut = new DataOutputStream(m_tlsStream);
+    DataInputStream *newIn = new DataInputStream(m_tlsStream);
+    delete m_output;
+    delete m_input;
+    m_output = newOut;
+    m_input = newIn;
+    m_vencryptUsed = true;
+
+    // Phase 4: Inner auth over TLS
+    if (chosenSubType == VeNCryptDefs::TLSNONE) {
+      m_extAuthListener->onCheckAccessControl(m_client);
+      m_output->writeUInt32(0);
+    } else if (chosenSubType == VeNCryptDefs::TLSVNC) {
+      doAuth(AuthDefs::VNC);
+    } else if (chosenSubType == VeNCryptDefs::TLSPLAIN) {
+      doAuth(AuthDefs::EXTERNAL);
+    }
+  } else {
+    m_output->writeUInt8(0x00);
+    throw AuthException(_T("VeNCrypt: non-TLS sub-types not supported"));
+  }
+}
+
 void RfbInitializer::initAuthenticate()
 {
   try {
     // Here the protocol varies between versions 3.3 and 3.7+.
     if (m_minorVerNum >= 7) {
       if (m_authAllowed) {
-        // Offer VNC(2) for standard viewers (RealVNC, UltraVNC, etc.)
-        // and TIGHT(16) for Windows auth with per-user permissions.
-        m_output->writeUInt8(2);
+        // Offer: VNC(2) standard password, RA2(5)/RA2_256(6) for RealVNC
+        // Viewer Windows auth, TIGHT(16) for TIGHT-capable viewers,
+        // VENCRYPT(19) for RealVNC encrypted connections.
+        m_output->writeUInt8(5);
         m_output->writeUInt8(SecurityDefs::VNC);
+        m_output->writeUInt8(SecurityDefs::RA2);
+        m_output->writeUInt8(SecurityDefs::RA2_256);
         m_output->writeUInt8(SecurityDefs::TIGHT);
+        m_output->writeUInt8(SecurityDefs::VENCRYPT);
         UINT8 clientSecType = m_input->readUInt8();
-        if (clientSecType == SecurityDefs::TIGHT) {
+        if (clientSecType == SecurityDefs::RA2) {
+          doRa2Auth(16);
+        } else if (clientSecType == SecurityDefs::RA2_256) {
+          doRa2Auth(32);
+        } else if (clientSecType == SecurityDefs::TIGHT) {
           m_tightEnabled = true;
           doTightAuth();
         } else if (clientSecType == SecurityDefs::VNC) {
           doAuth(AuthDefs::VNC);
+        } else if (clientSecType == SecurityDefs::VENCRYPT) {
+          doVeNCryptAuth();
         } else {
           throw AuthException(_T("Unsupported security type"));
         }

@@ -50,8 +50,8 @@ UINT32 AuthDefs::convertFromSecurityType(UINT32 securityType)
   case SecurityDefs::VNC:
     return VNC;
   case SecurityDefs::TIGHT:
-    return EXTERNAL; // Tight security can carry external auth
+    return EXTERNAL;
   }
 
-  return 0; // no corresponding authentication method
+  return 0;
 }
